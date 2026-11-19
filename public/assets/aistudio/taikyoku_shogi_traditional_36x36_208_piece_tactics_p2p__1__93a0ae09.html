@@ -1,0 +1,3178 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Taikyoku Shogi (大局将棋) — 36×36 Board, 208-Piece Tactics & P2P</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PeerJS for Client-Side P2P WebRTC on GitHub Pages -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- Google Fonts for Traditional Japanese Kanji & Clean Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700;800&family=Noto+Serif+JP:wght@600;700;900&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <style>
+    :root {
+      --kaya-light: #e6c280;
+      --kaya-mid: #d4a85c;
+      --kaya-dark: #b5853b;
+      --sumi-ink: #111827;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #0c0f14;
+      color: #f1f5f9;
+      font-family: 'Inter', sans-serif;
+      overflow: hidden;
+    }
+
+    .font-kanji { font-family: 'Noto Serif JP', serif; }
+    .font-mono-code { font-family: 'JetBrains Mono', monospace; }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(217, 119, 6, 0.45); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(217, 119, 6, 0.8); }
+
+    /* Traditional Shogi Pentagon Tile Shape */
+    .shogi-koma {
+      clip-path: polygon(50% 2%, 93% 19%, 98% 97%, 2% 97%, 7% 19%);
+      background: linear-gradient(180deg, #fdf3d7 0%, #f3d79b 65%, #dfc07c 100%);
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
+
+    .kaya-surface {
+      background: linear-gradient(135deg, #221a11 0%, #17120c 100%);
+    }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col bg-[#0b0e14] text-slate-100 overflow-hidden">
+
+  <!-- ==================== TOP NAVIGATION HEADER ==================== -->
+  <header class="h-14 shrink-0 bg-slate-950 border-b border-amber-700/40 px-3 lg:px-5 flex items-center justify-between gap-2 z-30">
+    <!-- Brand & Title -->
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-10 shogi-koma flex flex-col items-center justify-center border border-amber-800 shrink-0">
+        <span class="font-mono-code font-extrabold text-[8px] text-amber-900 leading-none">K</span>
+        <span class="font-kanji font-black text-base text-slate-950 leading-none">大局</span>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-kanji font-black text-sm md:text-base tracking-wide text-amber-200">
+            大局将棋 • TAIKYOKU SHOGI
+          </h1>
+          <span class="hidden sm:inline-block text-[10px] font-mono-code uppercase px-2 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-700/50">
+            36×36 • 804 Pieces • 208 Types
+          </span>
+        </div>
+        <p class="text-[10px] text-slate-400 hidden md:block">
+          Traditional Historical Rules • Complete 208-Piece Legend, Tactics & Limits Trainer • Client-Side P2P
+        </p>
+      </div>
+    </div>
+
+    <!-- Main View Switcher Tabs -->
+    <div class="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg p-0.5 text-xs">
+      <button id="tabBtnMatch" onclick="switchPrimaryView('match')" class="px-3 py-1.5 rounded-md font-semibold transition flex items-center gap-1.5 bg-amber-600 text-slate-950 shadow">
+        <i class="fa-solid fa-chess-board text-[11px]"></i>
+        <span>36×36 Match Board</span>
+      </button>
+      <button id="tabBtnTactics" onclick="switchPrimaryView('tactics')" class="px-3 py-1.5 rounded-md font-semibold transition flex items-center gap-1.5 text-slate-300 hover:text-white">
+        <i class="fa-solid fa-graduation-cap text-amber-400 text-[11px]"></i>
+        <span>Tactics & Piece Limits</span>
+        <span id="headerSolvedBadge" class="px-1.5 py-0.2 rounded bg-slate-800 text-amber-300 font-mono-code text-[10px]">0/208</span>
+      </button>
+      <button id="tabBtnLegend" onclick="openLegendModal()" class="px-3 py-1.5 rounded-md font-semibold transition flex items-center gap-1.5 text-slate-300 hover:text-white">
+        <i class="fa-solid fa-book-open text-amber-400 text-[11px]"></i>
+        <span class="hidden sm:inline">Full Legend (208)</span>
+      </button>
+    </div>
+
+    <!-- Opponent / P2P & Display Controls -->
+    <div class="flex items-center gap-1.5 md:gap-2">
+      <!-- Opponent Mode Selector -->
+      <select id="selectGameMode" onchange="changeOpponentMode(this.value)" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-medium focus:outline-none focus:border-amber-500">
+        <option value="pass">Local Pass & Play</option>
+        <option value="ai" selected>vs. Computer (Gote AI)</option>
+        <option value="p2p">P2P Online (Peer-to-Peer)</option>
+      </select>
+
+      <!-- P2P Multiplayer Connection Button -->
+      <button onclick="openP2PModal()" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition" title="Client-Side P2P Multiplayer for GitHub Pages">
+        <span id="p2pStatusDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+        <i class="fa-solid fa-network-wired text-[11px]"></i>
+        <span id="p2pHeaderLabel" class="hidden lg:inline">P2P Online</span>
+      </button>
+
+      <!-- Piece Label Display Toggle -->
+      <button id="btnLabelToggle" onclick="cycleLabelMode()" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition" title="Toggle Piece Label Style (Letter + Kanji vs. Large Letter)">
+        <i class="fa-solid fa-font text-[11px]"></i>
+        <span id="lblModeText" class="hidden xl:inline">Letter + Kanji</span>
+      </button>
+
+      <!-- Audio Wood Clack Toggle -->
+      <button id="btnAudio" onclick="toggleSound()" class="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 flex items-center justify-center transition" title="Toggle Traditional Wooden Koma Sound">
+        <i id="iconAudio" class="fa-solid fa-volume-high text-xs"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== VIEW 1: 36x36 TRADITIONAL MATCH VIEW ==================== -->
+  <div id="viewMatch" class="flex-1 flex overflow-hidden relative">
+
+    <!-- LEFT SIDEBAR: PIECE INSPECTOR, COMPASS, LIMITS & SEARCHABLE 208 LEGEND -->
+    <aside class="w-80 xl:w-84 shrink-0 bg-slate-950 border-r border-amber-800/30 flex flex-col justify-between p-3 overflow-y-auto z-20 hidden md:flex space-y-2.5">
+      <!-- Selected / Hovered Piece Card -->
+      <div class="bg-slate-900/90 border border-amber-600/40 rounded-xl p-3 space-y-2.5 shadow-lg">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+            <i class="fa-solid fa-compass-drafting"></i> Piece Specification
+          </span>
+          <button id="btnFlipPromo" onclick="toggleInspectorPromo()" class="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-semibold transition hidden">
+            <i class="fa-solid fa-rotate mr-1"></i>View Promoted
+          </button>
+        </div>
+
+        <!-- Piece Name, Kanji & Official Legend Code -->
+        <div class="flex items-center justify-between bg-slate-950 border border-amber-700/40 rounded-lg px-2.5 py-2">
+          <div class="pr-2 truncate">
+            <div id="inspName" class="font-bold text-sm text-amber-100 leading-tight truncate">King</div>
+            <div id="inspSub" class="text-[11px] text-slate-400 font-mono-code">Legend: [K] • 玉将</div>
+          </div>
+          <div id="inspCodeBadge" class="px-2.5 py-1 rounded bg-amber-500 text-slate-950 font-mono-code font-black text-xs shrink-0 shadow">
+            K
+          </div>
+        </div>
+
+        <!-- Koma Visual + 8-Way Directional Range Compass -->
+        <div class="grid grid-cols-2 gap-2 bg-slate-950/90 border border-slate-800 rounded-lg p-2">
+          <!-- Left: Traditional Wooden Koma Preview -->
+          <div class="flex flex-col items-center justify-center bg-slate-900/80 rounded-lg p-2 border border-slate-800/80">
+            <div class="w-16 h-20 shogi-koma flex flex-col items-center justify-center border border-amber-800">
+              <span id="inspKomaCode" class="font-mono-code font-extrabold text-[11px] text-amber-900 leading-none mb-0.5">K</span>
+              <span id="inspKomaKanji" class="font-kanji font-black text-xl text-slate-950 leading-none">玉将</span>
+            </div>
+            <div id="inspPromoLine" class="mt-1.5 text-[10px] text-amber-300/90 font-medium text-center truncate w-full">
+              Royal Commander
+            </div>
+          </div>
+
+          <!-- Right: 5x5 Movement & Range Matrix -->
+          <div class="flex flex-col items-center justify-center">
+            <div class="text-[9px] uppercase tracking-wider text-slate-400 mb-1 font-semibold">Movement Vectors</div>
+            <canvas id="inspCompassCanvas" width="105" height="105" class="rounded border border-slate-700 bg-slate-950"></canvas>
+          </div>
+        </div>
+
+        <!-- Compass Legend -->
+        <div class="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[9px] text-slate-300 bg-slate-950 py-1 px-2 rounded border border-slate-800">
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>Step 1</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span>Range N / Jump</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-sky-400 inline-block"></span>Slide ∞</span>
+          <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-fuchsia-400 inline-block"></span>Hook / Multi</span>
+        </div>
+
+        <!-- Movement & Tactical Limits Breakdown -->
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5 space-y-1.5 text-[11px]">
+          <div>
+            <span class="text-amber-400 font-semibold uppercase text-[10px] tracking-wider block">Movement Rule:</span>
+            <p id="inspMoveDesc" class="text-slate-200 leading-snug mt-0.5"></p>
+          </div>
+          <div class="border-t border-slate-800/90 pt-1.5">
+            <span class="text-rose-400 font-semibold uppercase text-[10px] tracking-wider block">Tactical Limits & Blind Spots:</span>
+            <p id="inspLimitsDesc" class="text-slate-300 leading-snug mt-0.5"></p>
+          </div>
+        </div>
+
+        <!-- Action Buttons: Locate on 36x36 or Practice Piece Tactics -->
+        <div class="grid grid-cols-2 gap-1.5 pt-0.5">
+          <button onclick="locatePieceOnBoard(state.inspectedCode)" class="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1 transition">
+            <i class="fa-solid fa-location-crosshairs text-amber-400"></i>
+            <span>Locate on Board</span>
+          </button>
+          <button onclick="openPieceTacticsTrainer(state.inspectedCode)" class="px-2 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-slate-950 text-[11px] font-bold flex items-center justify-center gap-1 transition shadow">
+            <i class="fa-solid fa-puzzle-piece"></i>
+            <span>Train Piece</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Searchable 208-Piece Legend List -->
+      <div class="flex-1 flex flex-col bg-slate-900/80 border border-slate-800 rounded-xl p-2.5 min-h-[160px] overflow-hidden">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+            <i class="fa-solid fa-list-ul mr-1"></i>208-Piece Legend (AB–YA)
+          </span>
+          <span id="hoverCoordsLabel" class="font-mono-code text-[10px] text-amber-400">--</span>
+        </div>
+        <input
+          id="sidebarSearchInput"
+          type="text"
+          oninput="renderSidebarLegend()"
+          placeholder="Search code or name (e.g. DM, LO, LN, AB)..."
+          class="w-full px-2.5 py-1 mb-1.5 rounded bg-slate-950 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+        />
+        <div id="sidebarLegendContainer" class="flex-1 overflow-y-auto space-y-1 pr-1 text-[11px]"></div>
+      </div>
+    </aside>
+
+    <!-- CENTER STAGE: 36x36 KAYA-WOOD SHOGI BOARD -->
+    <main class="flex-1 flex flex-col relative kaya-surface overflow-hidden">
+      <!-- Top Floating Camera & Turn Controls -->
+      <div class="absolute top-2.5 left-3 right-3 flex items-center justify-between pointer-events-none z-20 gap-2 flex-wrap">
+        <!-- Camera & Zoom Bar -->
+        <div class="flex items-center gap-1 bg-slate-950/90 border border-amber-700/40 rounded-lg p-1 pointer-events-auto shadow-lg">
+          <button onclick="zoomMainBoard(1.2)" class="w-7 h-7 rounded hover:bg-slate-800 text-slate-200 flex items-center justify-center text-xs transition" title="Zoom In">
+            <i class="fa-solid fa-magnifying-glass-plus"></i>
+          </button>
+          <button onclick="zoomMainBoard(0.84)" class="w-7 h-7 rounded hover:bg-slate-800 text-slate-200 flex items-center justify-center text-xs transition" title="Zoom Out">
+            <i class="fa-solid fa-magnifying-glass-minus"></i>
+          </button>
+          <button onclick="fitMainBoard()" class="px-2 h-7 rounded hover:bg-slate-800 text-amber-300 text-[11px] font-semibold transition">
+            Fit 36×36
+          </button>
+          <button onclick="focusCamp('sente')" class="px-2 h-7 rounded hover:bg-slate-800 text-sky-300 text-[11px] font-semibold transition">
+            Sente Camp (▲)
+          </button>
+          <button onclick="focusCamp('center')" class="px-2 h-7 rounded hover:bg-slate-800 text-emerald-300 text-[11px] font-semibold transition hidden sm:inline-block">
+            Center Line
+          </button>
+          <button onclick="focusCamp('gote')" class="px-2 h-7 rounded hover:bg-slate-800 text-rose-300 text-[11px] font-semibold transition">
+            Gote Camp (△)
+          </button>
+        </div>
+
+        <!-- Multi-Step (Lion / Free Eagle) or Promotion Prompt Banner -->
+        <div id="multiStepBanner" class="hidden pointer-events-auto items-center gap-2 bg-amber-950/95 border border-amber-400 px-3.5 py-1.5 rounded-full shadow-xl">
+          <span id="multiStepText" class="text-xs font-semibold text-amber-100">Second step available! Select adjacent square or stay in place (Igui).</span>
+          <button id="btnFinishMultiStep" onclick="finishLionSecondStep()" class="px-3 py-0.5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold transition">
+            Stay / End Move
+          </button>
+        </div>
+
+        <!-- Turn Status & Match Controls -->
+        <div class="flex items-center gap-2 bg-slate-950/90 border border-amber-700/40 rounded-lg px-3 py-1.5 pointer-events-auto shadow-lg">
+          <div id="turnIndicatorBadge" class="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span>Move 1 • ▲ Sente (Black)</span>
+          </div>
+          <div class="h-3.5 w-[1px] bg-slate-700"></div>
+          <button onclick="undoLastMove()" class="text-xs text-slate-300 hover:text-white px-1.5 py-0.5 rounded hover:bg-slate-800 transition" title="Undo Move">
+            <i class="fa-solid fa-rotate-left mr-1"></i>Undo
+          </button>
+          <button onclick="resetMatchBoard()" class="text-xs text-rose-300 hover:text-rose-200 px-1.5 py-0.5 rounded hover:bg-rose-950/60 transition" title="Reset 36×36 Board">
+            <i class="fa-solid fa-arrows-rotate mr-1"></i>Reset
+          </button>
+        </div>
+      </div>
+
+      <!-- Interactive 36x36 Canvas Viewport -->
+      <div id="boardViewport" class="flex-1 w-full h-full relative overflow-hidden cursor-grab active:cursor-grabbing">
+        <canvas id="shogiCanvas" class="block"></canvas>
+      </div>
+
+      <!-- Bottom Traditional Status Bar -->
+      <div class="h-12 shrink-0 bg-slate-950 border-t border-amber-800/40 px-4 flex items-center justify-between text-xs z-20">
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-sky-950 border border-sky-500/40 text-sky-300 font-mono-code font-bold">▲ Sente (Bottom)</span>
+            <span id="senteRoyalsLabel" class="font-mono-code text-amber-200">Royals: K, CP (2)</span>
+            <span id="senteCountLabel" class="text-slate-400 hidden sm:inline">• 402 Pieces</span>
+          </div>
+          <div class="h-4 w-[1px] bg-slate-800"></div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-rose-950 border border-rose-500/40 text-rose-300 font-mono-code font-bold">△ Gote (Top)</span>
+            <span id="goteRoyalsLabel" class="font-mono-code text-amber-200">Royals: K, CP (2)</span>
+            <span id="goteCountLabel" class="text-slate-400 hidden sm:inline">• 402 Pieces</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 text-[11px] text-slate-400">
+          <span>Drag to Pan • Scroll to Zoom • Click any piece for its Limits & Tactics</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- RIGHT SIDEBAR: 36x36 RADAR MINIMAP, MOVE LOG & P2P CHAT -->
+    <aside class="w-72 xl:w-80 shrink-0 bg-slate-950 border-l border-amber-800/30 flex flex-col justify-between p-3 overflow-y-auto z-20 hidden lg:flex space-y-2.5">
+      <!-- 1. Interactive 36x36 Minimap -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 flex flex-col items-center">
+        <div class="w-full flex items-center justify-between mb-1.5 px-1">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+            <i class="fa-solid fa-map mr-1"></i>36×36 Board Overview
+          </span>
+          <span id="minimapCountText" class="text-[10px] font-mono-code text-slate-400">804 Pieces</span>
+        </div>
+        <canvas id="minimapCanvas" width="188" height="188" class="rounded border border-amber-700/40 bg-slate-950 cursor-crosshair"></canvas>
+      </div>
+
+      <!-- 2. Traditional Coordinate Move Record (Kifu) -->
+      <div class="flex-1 bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 flex flex-col min-h-[160px] overflow-hidden">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+            <i class="fa-solid fa-scroll mr-1"></i>Official Move Record (棋譜)
+          </span>
+          <span id="moveCounterLabel" class="text-[10px] font-mono-code text-slate-400">0 Moves</span>
+        </div>
+        <div id="moveLogContainer" class="flex-1 overflow-y-auto space-y-1 text-[11px] font-mono-code pr-1"></div>
+      </div>
+
+      <!-- 3. P2P Status & Chat Box -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 flex flex-col h-48">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+            <i class="fa-solid fa-comments"></i> P2P Match Room & Chat
+          </span>
+          <button onclick="openP2PModal()" class="text-[10px] text-amber-300 hover:underline font-semibold">Configure P2P</button>
+        </div>
+        <div id="p2pChatMessages" class="flex-1 overflow-y-auto space-y-1 text-[11px] bg-slate-950/80 rounded p-2 border border-slate-800/80 mb-1.5">
+          <div class="text-slate-500 italic text-[10px]">Open "P2P Online" to host or join a browser-to-browser game on GitHub Pages.</div>
+        </div>
+        <form onsubmit="sendP2PChatMessage(event)" class="flex gap-1">
+          <input id="p2pChatInput" type="text" placeholder="Send message to peer..." class="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500" />
+          <button type="submit" class="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs transition">Send</button>
+        </form>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ==================== VIEW 2: 208-PIECE TACTICS, PUZZLES & LIMITS TRAINER ==================== -->
+  <div id="viewTactics" class="flex-1 hidden overflow-hidden bg-[#0b0e14]">
+    <!-- Left Column: 208 Piece Selector with Filter & Mastery Progress -->
+    <aside class="w-80 xl:w-96 shrink-0 bg-slate-950 border-r border-amber-800/30 flex flex-col p-3 space-y-2.5 overflow-hidden">
+      <div class="bg-slate-900 border border-amber-600/40 rounded-xl p-3 space-y-2">
+        <div class="flex items-center justify-between">
+          <h2 class="font-bold text-xs uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+            <i class="fa-solid fa-graduation-cap"></i> 208-Piece Mastery Progress
+          </h2>
+          <span id="tacticsProgressCount" class="font-mono-code font-bold text-xs text-emerald-400">0 / 208 Solved</span>
+        </div>
+        <div class="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+          <div id="tacticsProgressBar" class="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="flex gap-1.5 pt-0.5">
+          <input id="tacticsSearchInput" type="text" oninput="renderTacticsPieceList()" placeholder="Filter 208 pieces (code or name)..." class="flex-1 px-2.5 py-1 rounded bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-amber-500" />
+          <select id="tacticsFilterSelect" onchange="renderTacticsPieceList()" class="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-[11px] text-slate-200">
+            <option value="all">All (208)</option>
+            <option value="unsolved">Unsolved</option>
+            <option value="solved">Mastered</option>
+            <option value="special">Hook / Lion / Fire</option>
+            <option value="jump">Jumping Pieces</option>
+            <option value="step">Limited Step / Blind Spot</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Scrollable List of all 208 Pieces -->
+      <div id="tacticsPieceList" class="flex-1 overflow-y-auto space-y-1 pr-1"></div>
+    </aside>
+
+    <!-- Center Column: Interactive 11x11 Tactics & Limits Dojo Board -->
+    <main class="flex-1 flex flex-col items-center justify-between p-4 kaya-surface overflow-y-auto">
+      <!-- Top Puzzle Mode Switcher & Objective Banner -->
+      <div class="w-full max-w-2xl bg-slate-950/95 border border-amber-600/50 rounded-xl p-3 shadow-xl space-y-2">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span id="puzzlePieceBadge" class="px-2.5 py-1 rounded bg-amber-500 text-slate-950 font-mono-code font-black text-sm">AB</span>
+            <div>
+              <h3 id="puzzleTitle" class="font-bold text-sm md:text-base text-amber-200">Angry Boar (嗔猪) — Tactical Drill</h3>
+              <p id="puzzleSubtitle" class="text-[11px] text-slate-400">Learn exact movement vectors, range limits, and blind spots</p>
+            </div>
+          </div>
+
+          <!-- 3 Drill Modes per Piece -->
+          <div class="flex items-center bg-slate-900 border border-slate-700 rounded-lg p-0.5 text-xs">
+            <button id="btnDrillOffense" onclick="setTacticsDrillMode('offense')" class="px-2.5 py-1 rounded-md font-semibold bg-amber-500 text-slate-950">
+              1. Capture Drill
+            </button>
+            <button id="btnDrillBlindspot" onclick="setTacticsDrillMode('blindspot')" class="px-2.5 py-1 rounded-md font-semibold text-slate-300 hover:text-white">
+              2. Blind-Spot Exploit
+            </button>
+            <button id="btnDrillSandbox" onclick="setTacticsDrillMode('sandbox')" class="px-2.5 py-1 rounded-md font-semibold text-slate-300 hover:text-white">
+              3. Free Sandbox
+            </button>
+          </div>
+        </div>
+
+        <!-- Objective & Par Move Status -->
+        <div id="puzzleObjectiveBanner" class="flex items-center justify-between bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-2 text-xs">
+          <span id="puzzleInstructionText" class="text-slate-200 font-medium">
+            Navigate around blockers and capture all target tokens without ending on a guarded red danger square.
+          </span>
+          <span id="puzzleMovesRemaining" class="font-mono-code font-bold text-amber-300 shrink-0 ml-3">Moves: 0 / 3</span>
+        </div>
+      </div>
+
+      <!-- Interactive 11x11 Tactics Canvas -->
+      <div class="my-2 flex items-center justify-center">
+        <canvas id="tacticsCanvas" width="462" height="462" class="rounded-xl border-2 border-amber-600/60 shadow-2xl cursor-pointer"></canvas>
+      </div>
+
+      <!-- Bottom Controls: Visual Overlays (Range, Blockers, Blind Spots) & Next Piece -->
+      <div class="w-full max-w-2xl bg-slate-950/95 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-3 text-xs">
+          <label class="flex items-center gap-1.5 cursor-pointer text-slate-200">
+            <input type="checkbox" id="chkShowLimitsOverlay" checked onchange="drawTacticsBoard()" class="accent-amber-500 rounded" />
+            <span>Show Range & Blind-Spot Vectors</span>
+          </label>
+          <label class="flex items-center gap-1.5 cursor-pointer text-slate-200">
+            <input type="checkbox" id="chkTestPromotedInDojo" onchange="togglePromotedInDojo(this.checked)" class="accent-amber-500 rounded" />
+            <span id="lblTestPromoted">Test Promoted Form</span>
+          </label>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="resetCurrentPuzzle()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition">
+            <i class="fa-solid fa-rotate-right mr-1"></i>Reset Drill
+          </button>
+          <button onclick="selectNextTacticsPiece()" class="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition">
+            Next Piece <i class="fa-solid fa-arrow-right ml-1"></i>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Right Column: Detailed Piece Limits, 8-Way Compass Breakdown & Blind-Spot Analysis -->
+    <aside class="w-80 xl:w-96 shrink-0 bg-slate-950 border-l border-amber-800/30 flex flex-col p-3 space-y-3 overflow-y-auto">
+      <div class="bg-slate-900 border border-amber-600/40 rounded-xl p-3.5 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <div>
+            <div id="dojoPieceTitle" class="font-bold text-base text-amber-200">Angry Boar (嗔猪)</div>
+            <div id="dojoPieceCodeSub" class="text-xs font-mono-code text-slate-400">Legend Letter: [AB]</div>
+          </div>
+          <div class="w-12 h-14 shogi-koma flex flex-col items-center justify-center border border-amber-800">
+            <span id="dojoKomaCode" class="font-mono-code font-black text-[10px] text-amber-900 leading-none">AB</span>
+            <span id="dojoKomaKanji" class="font-kanji font-black text-base text-slate-950 leading-none mt-0.5">嗔猪</span>
+          </div>
+        </div>
+
+        <!-- 8-Way Exact Directional Table -->
+        <div>
+          <div class="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1.5">
+            8-Direction Capability & Range Limits
+          </div>
+          <div id="dojoDirectionGrid" class="grid grid-cols-3 gap-1.5 text-center font-mono-code text-xs bg-slate-950 p-2 rounded-lg border border-slate-800">
+            <!-- Populated by JS (NW, N, NE, W, SELF, E, SW, S, SE) -->
+          </div>
+        </div>
+
+        <!-- Detailed Limits & Vulnerabilities Box -->
+        <div class="space-y-2 text-xs">
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="font-bold text-emerald-400 text-[10px] uppercase tracking-wider mb-1">
+              <i class="fa-solid fa-arrows-to-dot mr-1"></i>How This Piece Works
+            </div>
+            <p id="dojoHowItWorks" class="text-slate-200 leading-relaxed"></p>
+          </div>
+
+          <div class="bg-rose-950/30 border border-rose-500/40 rounded-lg p-2.5">
+            <div class="font-bold text-rose-300 text-[10px] uppercase tracking-wider mb-1">
+              <i class="fa-solid fa-triangle-exclamation mr-1"></i>Key Limits & Blind Spots
+            </div>
+            <ul id="dojoLimitsList" class="list-disc list-inside text-slate-200 space-y-1 leading-snug"></ul>
+          </div>
+
+          <div class="bg-amber-950/30 border border-amber-500/40 rounded-lg p-2.5">
+            <div class="font-bold text-amber-300 text-[10px] uppercase tracking-wider mb-1">
+              <i class="fa-solid fa-angles-up mr-1"></i>Promotion Rule (Last 11 Ranks)
+            </div>
+            <p id="dojoPromoInfo" class="text-slate-200 leading-snug"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overlay Color Key -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-1.5 text-xs">
+        <div class="font-bold text-[10px] uppercase tracking-wider text-slate-400">Dojo Board Overlay Legend</div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-emerald-500/60 border border-emerald-400 inline-block"></span><span>Valid Legal Move / Reachable Square</span></div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-amber-500/50 border border-amber-400 inline-block"></span><span>Blocked by Obstacle (Slide Limit)</span></div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-indigo-500/40 border border-indigo-400 inline-block"></span><span>Piece Blind Spot (Cannot Attack Here)</span></div>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-rose-500/50 border border-rose-400 inline-block"></span><span>Enemy Guarded Square (Danger)</span></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ==================== MODAL 1: FULL 208-PIECE LEGEND & BOARD LAYOUT ==================== -->
+  <div id="legendModal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="max-w-6xl w-full h-[88vh] bg-slate-950 border-2 border-amber-600/60 rounded-2xl flex flex-col overflow-hidden shadow-2xl">
+      <div class="px-5 py-3.5 bg-slate-900 border-b border-amber-700/40 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="font-kanji font-black text-lg text-amber-300">
+            COMPLETE 208-PIECE TAIKYOKU SHOGI LEGEND (AB – YA)
+          </h2>
+          <p class="text-xs text-slate-400">Click "Locate on 36×36" to highlight that piece on the match board, or "Train Limits & Puzzle" to test it on the 11×11 Dojo board.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <input id="modalLegendSearch" type="text" oninput="renderFullLegendModalGrid()" placeholder="Search code, name, or kanji..." class="px-3 py-1.5 rounded-lg bg-slate-950 border border-amber-600/40 text-xs text-white w-60 focus:outline-none focus:border-amber-400" />
+          <button onclick="closeLegendModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-rose-900 text-slate-200 flex items-center justify-center">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <div id="modalLegendGrid" class="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5"></div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 2: CLIENT-SIDE P2P MULTIPLAYER (GITHUB PAGES READY) ==================== -->
+  <div id="p2pModal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="max-w-2xl w-full bg-slate-950 border-2 border-emerald-500/60 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+      <!-- Header -->
+      <div class="px-5 py-3.5 bg-slate-900 border-b border-emerald-500/30 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i class="fa-solid fa-network-wired text-emerald-400 text-lg"></i>
+          <div>
+            <h2 class="font-bold text-base text-white">Client-Side P2P Multiplayer (GitHub Pages Ready)</h2>
+            <p class="text-[11px] text-slate-400">Play directly browser-to-browser via WebRTC DataChannels with zero backend server required.</p>
+          </div>
+        </div>
+        <button onclick="closeP2PModal()" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Connection Mode Tabs -->
+      <div class="flex border-b border-slate-800 bg-slate-900/60 text-xs font-semibold">
+        <button id="p2pTabRoom" onclick="switchP2PTab('room')" class="flex-1 py-2.5 text-center border-b-2 border-emerald-400 text-emerald-300 bg-slate-900">
+          1. Instant Room Code & Invite Link (PeerJS WebRTC)
+        </button>
+        <button id="p2pTabManual" onclick="switchP2PTab('manual')" class="flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-400 hover:text-slate-200">
+          2. Serverless Manual SDP Handshake (Zero-Broker)
+        </button>
+      </div>
+
+      <!-- Body Content -->
+      <div class="p-5 space-y-4 overflow-y-auto max-h-[75vh]">
+        <!-- Status Banner -->
+        <div class="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs">
+          <div class="flex items-center gap-2">
+            <span id="p2pModalDot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+            <span id="p2pModalStatusText" class="font-medium text-slate-200">Not connected — Choose Host or Join below</span>
+          </div>
+          <span id="p2pRoleBadge" class="font-mono-code text-[11px] px-2 py-0.5 rounded bg-slate-800 text-amber-300">Solo / Local</span>
+        </div>
+
+        <!-- TAB 1: PEERJS ROOM CODE & INVITE URL -->
+        <div id="p2pPanelRoom" class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Host a Room Card -->
+            <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3">
+              <div class="font-bold text-xs uppercase tracking-wider text-emerald-300">
+                <i class="fa-solid fa-tower-broadcast mr-1"></i>Host a New Game (Play ▲ Sente)
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Generate a Room Code and shareable GitHub Pages link. When your friend opens the link or enters your code, the 36×36 match starts automatically.
+              </p>
+              <button onclick="hostPeerJSRoom()" class="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs transition shadow">
+                Create P2P Room Code
+              </button>
+
+              <div id="hostRoomDetails" class="hidden space-y-2 pt-2 border-t border-slate-800">
+                <div class="text-[11px] text-slate-400">Your Room Code:</div>
+                <div class="flex items-center gap-1.5">
+                  <input id="hostRoomCodeInput" type="text" readonly class="flex-1 bg-slate-950 border border-emerald-500/50 rounded px-2.5 py-1.5 font-mono-code font-bold text-sm text-emerald-300 text-center" />
+                  <button onclick="copyTextFromInput('hostRoomCodeInput')" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-semibold" title="Copy Code">
+                    <i class="fa-solid fa-copy"></i>
+                  </button>
+                </div>
+                <button onclick="copyInviteLink()" class="w-full py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-semibold transition">
+                  <i class="fa-solid fa-link mr-1"></i>Copy Shareable Invite URL (?room=...)
+                </button>
+              </div>
+            </div>
+
+            <!-- Join a Room Card -->
+            <div class="bg-slate-900/90 border border-sky-500/30 rounded-xl p-4 space-y-3">
+              <div class="font-bold text-xs uppercase tracking-wider text-sky-300">
+                <i class="fa-solid fa-plug mr-1"></i>Join Friend's Room (Play △ Gote)
+              </div>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Enter the Room Code shared by the host to establish a direct peer-to-peer connection.
+              </p>
+              <input id="joinRoomCodeInput" type="text" placeholder="e.g. taikyoku-4821" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono-code text-xs text-white focus:outline-none focus:border-sky-400" />
+              <button onclick="joinPeerJSRoom()" class="w-full py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition shadow">
+                Connect to Room
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: SERVERLESS MANUAL WEBRTC SDP HANDSHAKE -->
+        <div id="p2pPanelManual" class="hidden space-y-4">
+          <p class="text-xs text-slate-300 bg-slate-900 border border-slate-800 rounded-lg p-3 leading-relaxed">
+            <strong>100% Brokerless WebRTC:</strong> Uses Google STUN (<code class="text-amber-300">stun:stun.l.google.com:19302</code>) to generate a self-contained SDP token. Copy & paste the token via Discord/chat to connect directly without any signaling server.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <!-- Step A: Host Offer -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2">
+              <div class="font-bold text-emerald-300 uppercase">Host (▲ Sente)</div>
+              <button onclick="createManualWebRTCOffer()" class="w-full py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold">
+                1. Generate Offer Token
+              </button>
+              <textarea id="manualOfferOut" rows="2" readonly placeholder="Offer token will appear here..." class="w-full bg-slate-950 border border-slate-800 rounded p-1.5 font-mono-code text-[10px] text-slate-300"></textarea>
+              <button onclick="copyTextFromInput('manualOfferOut')" class="w-full py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200">
+                Copy Offer Token
+              </button>
+              <div class="pt-2 border-t border-slate-800">
+                <div class="text-[11px] text-slate-400 mb-1">3. Paste Friend's Answer Token:</div>
+                <textarea id="manualAnswerIn" rows="2" placeholder="Paste Answer token from friend..." class="w-full bg-slate-950 border border-slate-700 rounded p-1.5 font-mono-code text-[10px] text-white"></textarea>
+                <button onclick="acceptManualWebRTCAnswer()" class="w-full mt-1 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold">
+                  Complete Connection
+                </button>
+              </div>
+            </div>
+
+            <!-- Step B: Guest Answer -->
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2">
+              <div class="font-bold text-sky-300 uppercase">Guest (△ Gote)</div>
+              <div class="text-[11px] text-slate-400">2. Paste Host's Offer Token:</div>
+              <textarea id="manualOfferIn" rows="2" placeholder="Paste Host's Offer token here..." class="w-full bg-slate-950 border border-slate-700 rounded p-1.5 font-mono-code text-[10px] text-white"></textarea>
+              <button onclick="createManualWebRTCAnswer()" class="w-full py-1.5 rounded bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold">
+                Generate Answer Token
+              </button>
+              <textarea id="manualAnswerOut" rows="2" readonly placeholder="Your Answer token will appear here..." class="w-full bg-slate-950 border border-slate-800 rounded p-1.5 font-mono-code text-[10px] text-slate-300"></textarea>
+              <button onclick="copyTextFromInput('manualAnswerOut')" class="w-full py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200">
+                Copy Answer Token & Send to Host
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="p2pCopyFeedback" class="text-center text-xs font-semibold text-emerald-400 hidden">Copied to clipboard!</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 3: END OF GAME ANNOUNCEMENT ==================== -->
+  <div id="victoryModal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="max-w-md w-full bg-slate-900 border-2 border-amber-500 rounded-2xl p-6 text-center space-y-4 shadow-2xl">
+      <div class="w-16 h-20 mx-auto shogi-koma flex flex-col items-center justify-center border border-amber-800">
+        <span class="font-mono-code font-black text-xs text-amber-900">K</span>
+        <span class="font-kanji font-black text-2xl text-slate-950">勝負</span>
+      </div>
+      <h2 id="victoryModalTitle" class="font-kanji font-black text-2xl text-amber-300">Sente Wins!</h2>
+      <p id="victoryModalReason" class="text-xs text-slate-300 leading-relaxed">
+        All opposing Royal Commanders (King [K] and Crown Prince [CP]) have been captured.
+      </p>
+      <div class="flex justify-center gap-3 pt-2">
+        <button onclick="closeVictoryModalAndReset()" class="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs uppercase tracking-wider">
+          New 36×36 Match
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== JAVASCRIPT ENGINE ==================== -->
+  <script>
+    /*************************************************************************
+     * 1. TRADITIONAL WOODEN KOMA SOUND SYNTHESIZER (Web Audio API)
+     *************************************************************************/
+    const Sound = {
+      ctx: null,
+      enabled: true,
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) this.ctx = new AudioCtx();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+      },
+      playKomaClack(isCapture = false) {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(isCapture ? 210 : 165, now);
+        osc.frequency.exponentialRampToValueAtTime(48, now + 0.085);
+        gain.gain.setValueAtTime(isCapture ? 0.35 : 0.22, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.095);
+      },
+      playSolvedChime() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        [523.25, 659.25, 783.99].forEach((f, i) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(f, now + i * 0.07);
+          gain.gain.setValueAtTime(0.14, now + i * 0.07);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.07 + 0.28);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + i * 0.07);
+          osc.stop(now + i * 0.07 + 0.29);
+        });
+      }
+    };
+
+    function toggleSound() {
+      Sound.enabled = !Sound.enabled;
+      document.getElementById('iconAudio').className = Sound.enabled
+        ? 'fa-solid fa-volume-high text-xs text-amber-300'
+        : 'fa-solid fa-volume-xmark text-xs text-slate-500';
+    }
+
+    /*************************************************************************
+     * 2. COMPLETE 208-PIECE OFFICIAL LEGEND & EXACT 36x36 LAYOUT STRING
+     *************************************************************************/
+    const RAW_LEGEND = [
+      ["AB", "Angry boar", "嗔猪"],
+      ["B", "Angle mover", "角行"],
+      ["BA", "Running bear", "走熊"],
+      ["BB", "Blind bear", "盲熊"],
+      ["BC", "Beast cadet", "獣曹"],
+      ["BD", "Buddhist devil", "仏鬼"],
+      ["BE", "Bear soldier", "熊兵"],
+      ["BG", "Angle general", "角将"],
+      ["BI", "Blind dog", "盲犬"],
+      ["BL", "Blue dragon", "青龍"],
+      ["BM", "Blind monkey", "盲猿"],
+      ["BN", "Cannon soldier", "砲兵"],
+      ["BO", "Beast officer", "獣吏"],
+      ["BS", "Boar soldier", "猪兵"],
+      ["BT", "Blind tiger", "盲虎"],
+      ["C", "Copper general", "銅将"],
+      ["CA", "Capricorn", "摩羯"],
+      ["CC", "Huai chicken", "淮鶏"],
+      ["CD", "Ceramic dove", "鳩槃"],
+      ["CE", "Cloud eagle", "雲鷲"],
+      ["CG", "Chicken general", "鶏将"],
+      ["CH", "Chariot soldier", "車兵"],
+      ["CI", "Stone chariot", "石車"],
+      ["CK", "Flying chicken", "飛鶏"],
+      ["CL", "Cloud dragon", "雲龍"],
+      ["CM", "Climbing monkey", "登猿"],
+      ["CN", "Center standard", "中旗"],
+      ["CO", "Fowl officer", "禽吏"],
+      ["CP", "Crown prince", "太子"],
+      ["CR", "Copper chariot", "銅車"],
+      ["CS", "Cat sword", "猫刄"],
+      ["CT", "Fowl cadet", "禽曹"],
+      ["D", "Dog", "犬"],
+      ["DE", "Drunken elephant", "酔象"],
+      ["DG", "Roaring dog", "吼犬"],
+      ["DH", "Dragon horse", "龍馬"],
+      ["DK", "Dragon king", "龍王"],
+      ["DL", "Howling dog (left)", "犬左"],
+      ["DM", "Fire demon", "火鬼"],
+      ["DO", "Donkey", "驢馬"],
+      ["DR", "Howling dog (right)", "犬右"],
+      ["DS", "Dark spirit", "闇鬼"],
+      ["DV", "Deva", "提婆"],
+      ["EA", "Earth general", "土将"],
+      ["EB", "Enchanted badger", "変狸"],
+      ["EC", "Earth chariot", "土車"],
+      ["ED", "Earth dragon", "地龍"],
+      ["EG", "Fierce eagle", "猛鷲"],
+      ["EL", "Flying eagle", "飛鷲"],
+      ["ES", "Eastern barbarian", "東夷"],
+      ["EW", "Evil wolf", "悪狼"],
+      ["F", "Fire general", "火将"],
+      ["FC", "Flying cat", "飛猫"],
+      ["FD", "Flying dragon", "飛龍"],
+      ["FE", "Free eagle", "奔鷲"],
+      ["FG", "Fragrant elephant", "香象"],
+      ["FH", "Flying horse", "飛馬"],
+      ["FI", "Fire dragon", "火龍"],
+      ["FL", "Fierce leopard", "猛豹"],
+      ["FO", "Forest demon", "林鬼"],
+      ["FP", "Free pup", "奔犬"],
+      ["FR", "Free demon", "奔鬼"],
+      ["FS", "Flying swallow", "飛燕"],
+      ["FT", "Free dream-eater", "奔獏"],
+      ["FY", "Flying goose", "飛鵝"],
+      ["G", "Gold general", "金将"],
+      ["GB", "Go-between", "仲人"],
+      ["GC", "Gold chariot", "金車"],
+      ["GD", "Great dragon", "大龍"],
+      ["GE", "Great standard", "大旗"],
+      ["GG", "Great general", "大将"],
+      ["GL", "Gold stag", "金鹿"],
+      ["GM", "Great master", "大師"],
+      ["GN", "Wood general", "木将"],
+      ["GO", "Gold bird", "金鳥"],
+      ["GR", "Great dove", "大鳩"],
+      ["GS", "Great stag", "大鹿"],
+      ["GT", "Great turtle", "大亀"],
+      ["GU", "Guardian of the gods", "金剛"],
+      ["H", "Horse general", "馬将"],
+      ["HE", "Ram's-head soldier", "羊兵"],
+      ["HF", "Horned hawk", "角鷹"],
+      ["HM", "Hook mover", "鉤行"],
+      ["HO", "Horseman", "騎士"],
+      ["HR", "Running horse", "走馬"],
+      ["HS", "Horse soldier", "馬兵"],
+      ["I", "Iron general", "鉄将"],
+      ["K", "King", "玉将"],
+      ["KM", "Kirin master", "麟師"],
+      ["KR", "Kirin", "麒麟"],
+      ["L", "Incense chariot", "香車"],
+      ["LB", "Longbow soldier", "弩兵"],
+      ["LC", "Left chariot", "左車"],
+      ["LD", "Lion dog", "狛犬"],
+      ["LE", "Left dragon", "左龍"],
+      ["LG", "Left general", "左将"],
+      ["LI", "Lion hawk", "獅鷹"],
+      ["LL", "Little turtle", "小亀"],
+      ["LN", "Lion", "獅子"],
+      ["LO", "Tengu", "天狗"],
+      ["LP", "Leopard soldier", "豹兵"],
+      ["LS", "Little standard", "小旗"],
+      ["LT", "Left tiger", "左虎"],
+      ["M", "Mountain general", "山将"],
+      ["MF", "Mountain hawk", "山鷹"],
+      ["MK", "Side monkey", "横猿"],
+      ["ML", "Left mountain eagle", "左山鷲"],
+      ["MR", "Right mountain eagle", "右山鷲"],
+      ["MS", "Mountain stag", "山鹿"],
+      ["MT", "Center master", "中師"],
+      ["N", "Cassia horse", "桂馬"],
+      ["NB", "Northern barbarian", "北狄"],
+      ["NK", "Neighboring king", "近王"],
+      ["NT", "Fierce wolf", "猛狼"],
+      ["O", "Ox general", "牛将"],
+      ["OC", "Ox chariot", "牛車"],
+      ["OK", "Old kite", "古鵄"],
+      ["OM", "Old monkey", "古猿"],
+      ["OR", "Old rat", "古鼠"],
+      ["OS", "Ox soldier", "牛兵"],
+      ["OW", "Swooping owl", "梟"],
+      ["OX", "Flying ox", "飛牛"],
+      ["P", "Pawn", "歩兵"],
+      ["PC", "Peacock", "孔雀"],
+      ["PE", "Peng master", "鵬師"],
+      ["PG", "Pup general", "犬将"],
+      ["PH", "Phoenix", "鳳凰"],
+      ["PI", "Pig general", "豚将"],
+      ["PM", "Phoenix master", "鳳師"],
+      ["PR", "Prancing stag", "踊鹿"],
+      ["PS", "Poisonous serpent", "毒蛇"],
+      ["Q", "Free king", "奔王"],
+      ["R", "Flying chariot", "飛車"],
+      ["RA", "Rain dragon", "雨龍"],
+      ["RB", "Rushing bird", "行鳥"],
+      ["RC", "Right chariot", "右車"],
+      ["RD", "Reclining dragon", "臥龍"],
+      ["RE", "River general", "川将"],
+      ["RG", "Right general", "右将"],
+      ["RH", "Running chariot", "走車"],
+      ["RI", "Right dragon", "右龍"],
+      ["RN", "Running stag", "走鹿"],
+      ["RO", "Flying general", "飛将"],
+      ["RP", "Running pup", "走犬"],
+      ["RR", "Running rabbit", "走兎"],
+      ["RS", "Rear standard", "後旗"],
+      ["RT", "Running tiger", "走虎"],
+      ["RU", "Running serpent", "走蛇"],
+      ["RV", "Reverse chariot", "反車"],
+      ["RW", "Running wolf", "走狼"],
+      ["S", "Silver general", "銀将"],
+      ["SA", "Side boar", "横猪"],
+      ["SC", "Crossbow soldier", "弓兵"],
+      ["SD", "Front standard", "前旗"],
+      ["SE", "Sword soldier", "刀兵"],
+      ["SF", "Side flyer", "横飛"],
+      ["SG", "Stone general", "石将"],
+      ["SI", "Side dragon", "横龍"],
+      ["SL", "Side soldier", "横兵"],
+      ["SM", "Side mover", "横行"],
+      ["SN", "Coiled serpent", "蟠蛇"],
+      ["SO", "Soldier", "兵士"],
+      ["SP", "Spear soldier", "槍兵"],
+      ["SQ", "Square mover", "方行"],
+      ["SR", "Silver rabbit", "銀兎"],
+      ["SS", "Side serpent", "横蛇"],
+      ["ST", "Strutting crow", "烏行"],
+      ["SU", "Southern barbarian", "南蛮"],
+      ["SV", "Silver chariot", "銀車"],
+      ["SW", "Swallow's wings", "燕羽"],
+      ["SX", "Side ox", "横牛"],
+      ["T", "Tile general", "瓦将"],
+      ["TC", "Tile chariot", "瓦車"],
+      ["TD", "Turtle dove", "山鳩"],
+      ["TF", "Treacherous fox", "妖狐"],
+      ["TG", "Fierce tiger", "猛虎"],
+      ["TS", "Turtle-snake", "玄武"],
+      ["TT", "Right tiger", "右虎"],
+      ["VB", "Fierce bear", "猛熊"],
+      ["VD", "Fierce dragon", "猛龍"],
+      ["VE", "Vertical bear", "竪熊"],
+      ["VG", "Vice general", "副将"],
+      ["VH", "Vertical horse", "竪馬"],
+      ["VI", "Vermillion sparrow", "朱雀"],
+      ["VL", "Vertical leopard", "竪豹"],
+      ["VM", "Vertical mover", "竪行"],
+      ["VO", "Fierce ox", "猛牛"],
+      ["VP", "Vertical pup", "竪犬"],
+      ["VR", "Vertical soldier", "竪兵"],
+      ["VS", "Fierce stag", "猛鹿"],
+      ["VT", "Vertical tiger", "竪虎"],
+      ["VW", "Vertical wolf", "竪狼"],
+      ["W", "Whale", "鯨鯢"],
+      ["WA", "Water dragon", "水龍"],
+      ["WB", "Water ox", "水牛"],
+      ["WC", "Wood chariot", "木車"],
+      ["WD", "Wind dragon", "風龍"],
+      ["WE", "White elephant", "白象"],
+      ["WF", "Side wolf", "横狼"],
+      ["WG", "Water general", "水将"],
+      ["WH", "White foal", "白駒"],
+      ["WI", "Wind horse", "風馬"],
+      ["WL", "Woodland demon", "森鬼"],
+      ["WN", "Wind general", "風将"],
+      ["WO", "Wooden dove", "木鳩"],
+      ["WR", "Sumo wrestler", "力士"],
+      ["WS", "Western barbarian", "西戎"],
+      ["WT", "White tiger", "白虎"],
+      ["YA", "Nature spirit", "山神"]
+    ];
+
+    // Exact 36x36 Taikyoku Shogi Rows (from Rank 9 down to Back Rank 0)
+    const TAIKYOKU_36_ROWS = {
+      row9: "LC MK VM OX LB VP VH BN DH DK SE HF EL SP VL TG SC LD DG SC TG VL SP EL HF SE DK DH BN VH VP LB OX VM MK RC".split(" "),
+      row8: "CH SL VR WN RE M SD HS GN OS EA BS SG LP T BE I GM GE I BE T LP SG BS EA OS GN HS SD M RE WN VR SL CH".split(" "),
+      row7: "EC BL EB HO OW CM CS SW BM BT OC SF BB OR SQ SN RD LI FE RD SN SQ OR BB SF OC BT BM SW CS CM OW HO EB VI EC".split(" "),
+      row6: "TC VW SX DO FH VB AB EW WI CK OM CC WS ES VS NT TF PE MT TF NT VS SU NB CC OM CK WI EW AB VB FH DO SX VW TC".split(" "),
+      row5: "WC WH DL SM PR WB FL EG FD PS FY ST BI WG F KR CA GT LL HM PH F WG BI ST FY PS FD EG FL WB PR SM DR WH WC".split(" "),
+      row4: "CI CE B R WF FC MF VT SO LS CL CR RH HE VO GD GO DV DS GO GD VO HE RH CR CL LS SO VT MF FC WF R B CE CI".split(" "),
+      row3: "SV VE N PI CG PG H O CN SA SR GL LN CT GS VD WL GG VG WL VD GS CT LN GL SR SA CN O H PG CG PI N VE SV".split(" "),
+      row2: "GC SI RN RW BG RO LT LE BO WD FP RB OK PC WA FI C KM PM C FI WA PC OK RB FP WD BO RI TT RO BG RW RN SI GC".split(" "),
+      row1: "RV WE TD FS CO RA FO MS RP RU SS GR RT BA BD WR S NK DE S GU YA BA RT GR SS RU RP MS FO RA CO FS TD FG RV".split(" "),
+      row0: "L TS RR W DM ML LO BC HR FR ED CD FT Q RS LG G K CP G RG RS Q FT WO ED FR HR BC LO MR DM W RR WT L".split(" ")
+    };
+
+    /*************************************************************************
+     * 3. AUTHENTIC PIECE MOVEMENT & TACTICAL LIMITS DATABASE (ALL 208 PIECES)
+     * Every piece has an explicit 8-direction capability map + special traits
+     * and clear plain-English Tactical Limits & Blind Spots.
+     *************************************************************************/
+    const DIRS_8 = {
+      NW: [-1, -1], N: [-1, 0], NE: [-1, 1],
+      W:  [0, -1],              E:  [0, 1],
+      SW: [1, -1],  S: [1, 0],  SE: [1, 1]
+    };
+
+    const PIECE_DB = {};
+
+    function createPieceMovementSpec(code, name, kanji) {
+      const lower = name.toLowerCase();
+      // dirs map: key in DIRS_8 -> { type: 'none' | 'step' | 'range' | 'slide' | 'jump' | 'hook', max: number }
+      const dirs = {
+        NW: { type: 'none', max: 0 }, N: { type: 'none', max: 0 }, NE: { type: 'none', max: 0 },
+        W:  { type: 'none', max: 0 },                              E:  { type: 'none', max: 0 },
+        SW: { type: 'none', max: 0 }, S: { type: 'none', max: 0 }, SE: { type: 'none', max: 0 }
+      };
+      const setDirs = (keys, type, max = 1) => {
+        keys.forEach(k => { dirs[k] = { type, max }; });
+      };
+
+      let promotesTo = 'G';
+      let isRoyal = (code === 'K' || code === 'CP');
+      let special = null; // 'lion', 'fire', 'hook_diag', 'hook_ortho', 'knight', 'range_jump'
+      let extraJumps = []; // array of [dr, dc]
+
+      // 1. Specific Historic Taikyoku Piece Rules
+      if (code === 'K' || code === 'CP') {
+        setDirs(['NW','N','NE','W','E','SW','S','SE'], 'step', 1);
+        promotesTo = null;
+      } else if (code === 'NK') {
+        setDirs(['NW','N','NE','W','E','SW','S','SE'], 'step', 1);
+        promotesTo = 'CP';
+      } else if (code === 'DE') {
+        setDirs(['NW','N','NE','W','E','SW','SE'], 'step', 1); // Blind spot: S
+        promotesTo = 'CP';
+      } else if (code === 'P') {
+        setDirs(['N'], 'step', 1);
+        promotesTo = 'G';
+      } else if (code === 'GB') {
+        setDirs(['N','S'], 'step', 1);
+        promotesTo = 'DE';
+      } else if (code === 'D') {
+        setDirs(['N','NW','NE'], 'step', 1);
+        promotesTo = 'G';
+      } else if (code === 'G') {
+        setDirs(['NW','N','NE','W','E','S'], 'step', 1);
+        promotesTo = 'R';
+      } else if (code === 'S') {
+        setDirs(['NW','N','NE','SW','SE'], 'step', 1);
+        promotesTo = 'VM';
+      } else if (code === 'C') {
+        setDirs(['NW','N','NE','S'], 'step', 1);
+        promotesTo = 'SM';
+      } else if (code === 'I' || code === 'SG') {
+        setDirs(['NW','N','NE'], 'step', 1);
+        promotesTo = 'G';
+      } else if (code === 'T' || code === 'EA') {
+        setDirs(['NW','NE','S'], 'step', 1);
+        promotesTo = 'G';
+      } else if (code === 'FL') {
+        setDirs(['NW','N','NE','SW','S','SE'], 'step', 1);
+        promotesTo = 'B';
+      } else if (code === 'BT') {
+        setDirs(['NW','NE','W','E','SW','S','SE'], 'step', 1); // Blind spot: N!
+        promotesTo = 'FD';
+      } else if (code === 'AB') {
+        setDirs(['N','W','E','S'], 'step', 1);
+        promotesTo = 'Q';
+      } else if (code === 'CS') {
+        setDirs(['NW','NE','SW','SE'], 'step', 1);
+        promotesTo = 'DH';
+      } else if (code === 'EW') {
+        setDirs(['NW','N','NE','W','E'], 'step', 1);
+        promotesTo = 'FE';
+      } else if (code === 'BM' || code === 'BB') {
+        setDirs(['NW','NE','W','E','SW','SE'], 'step', 1);
+        promotesTo = 'FD';
+      } else if (code === 'CM') {
+        setDirs(['NW','N','NE','S'], 'step', 1);
+        promotesTo = 'TG';
+      } else if (code === 'SN') {
+        setDirs(['N','SW','S','SE'], 'step', 1);
+        promotesTo = 'DK';
+      } else if (code === 'RD') {
+        setDirs(['N','W','E','SW','S','SE'], 'step', 1);
+        promotesTo = 'GD';
+      } else if (code === 'OM') {
+        setDirs(['NW','NE','SW','S','SE'], 'step', 1);
+        promotesTo = 'MF';
+      } else if (code === 'ST' || code === 'SW') {
+        setDirs(['N','SW','SE'], 'step', 1);
+        promotesTo = 'FC';
+      } else if (code === 'OR') {
+        setDirs(['NW','NE','S'], 'range', 2);
+        promotesTo = 'RB';
+      } else if (code === 'EB') {
+        setDirs(['N','W','E'], 'range', 2);
+        promotesTo = 'CP';
+      } else if (code === 'DO') {
+        setDirs(['W','E'], 'step', 1);
+        setDirs(['N','S'], 'jump', 2);
+        extraJumps = [[-2,0],[2,0]];
+        promotesTo = 'G';
+      } else if (code === 'N') {
+        special = 'knight';
+        extraJumps = [[-2,-1],[-2,1]];
+        promotesTo = 'G';
+      } else if (code === 'KR' || code === 'KM') {
+        setDirs(['NW','NE','SW','SE'], 'step', 1);
+        setDirs(['N','S','W','E'], 'jump', 2);
+        extraJumps = [[-2,0],[2,0],[0,-2],[0,2]];
+        promotesTo = 'LN';
+      } else if (code === 'PH' || code === 'PM') {
+        setDirs(['N','S','W','E'], 'step', 1);
+        setDirs(['NW','NE','SW','SE'], 'jump', 2);
+        extraJumps = [[-2,-2],[-2,2],[2,-2],[2,2]];
+        promotesTo = 'Q';
+      } else if (code === 'LN' || code === 'LD') {
+        setDirs(['NW','N','NE','W','E','SW','S','SE'], 'step', 1);
+        special = 'lion';
+        extraJumps = [[-2,-2],[-2,-1],[-2,0],[-2,1],[-2,2],[-1,-2],[-1,2],[0,-2],[0,2],[1,-2],[1,2],[2,-2],[2,-1],[2,0],[2,1],[2,2]];
+        promotesTo = 'FE';
+      } else if (code === 'FE' || code === 'LI' || code === 'EL' || code === 'HF') {
+        setDirs(['NW','N','NE','W','E','SW','S','SE'], 'slide', 36);
+        special = 'lion';
+        extraJumps = [[-2,-2],[-2,0],[-2,2],[0,-2],[0,2],[2,-2],[2,0],[2,2]];
+        promotesTo = 'GG';
+      } else if (code === 'DM') {
+        setDirs(['NW','N','NE','W','E','SW','S','SE'], 'slide', 36);
+        special = 'fire';
+        promotesTo = 'Q';
+      } else if (code === 'LO' || code === 'PC' || code === 'CA') {
+        setDirs(['NW','NE','SW','SE'], 'hook', 36);
+        setDirs(['N','S','W','E'], 'step', 1);
+        special = 'hook_diag';
+        promotesTo = 'FE';
+      } else if (code === 'HM') {
+        setDirs(['N','S','W','E'], 'hook', 36);
+        setDirs(['NW','NE','SW','SE'], 'step', 1);
+        special = 'hook_ortho';
+        promotesTo = 'GG';
+      } else if (code === 'GG' || code === 'VG' || code === 'GM' || code === 'PE' || code === 'MT') {
+        setDirs(['NW','N','NE','W','E','SW','S','SE'], 'slide', 36);
+        special = 'range_jump';
+        promotesTo = null;
+      } else if (code === 'Q' || code === 'FR' || code === 'FT' || code === 'FP') {
+        setDirs(['NW','N','NE','W','E','SW','S','SE'], 'slide', 36);
+        promotesTo = 'GG';
+      } else if (code === 'R' || code === 'SQ') {
+        setDirs(['N','S','W','E'], 'slide', 36);
+        promotesTo = 'DK';
+      } else if (code === 'DK') {
+        setDirs(['N','S','W','E'], 'slide', 36);
+        setDirs(['NW','NE','SW','SE'], 'step', 1);
+        promotesTo = 'Q';
+      } else if (code === 'B') {
+        setDirs(['NW','NE','SW','SE'], 'slide', 36);
+        promotesTo = 'DH';
+      } else if (code === 'DH') {
+        setDirs(['NW','NE','SW','SE'], 'slide', 36);
+        setDirs(['N','S','W','E'], 'step', 1);
+        promotesTo = 'FE';
+      } else if (code === 'L' || code === 'OC') {
+        setDirs(['N'], 'slide', 36);
+        promotesTo = 'W';
+      } else if (code === 'RV') {
+        setDirs(['N','S'], 'slide', 36);
+        promotesTo = 'W';
+      } else if (code === 'W') {
+        setDirs(['N','S','SW','SE'], 'slide', 36);
+        promotesTo = 'Q';
+      } else if (code === 'WH') {
+        setDirs(['N','S','NW','NE'], 'slide', 36);
+        promotesTo = 'Q';
+      } else if (code === 'VM') {
+        setDirs(['N','S'], 'slide', 36);
+        setDirs(['W','E'], 'step', 1);
+        promotesTo = 'OX';
+      } else if (code === 'SM') {
+        setDirs(['W','E'], 'slide', 36);
+        setDirs(['N','S'], 'step', 1);
+        promotesTo = 'WB';
+      } else if (code === 'FD') {
+        setDirs(['NW','NE','SW','SE'], 'range', 2);
+        promotesTo = 'DK';
+      } else if (code === 'VO') {
+        setDirs(['N','S','W','E'], 'range', 2);
+        promotesTo = 'OX';
+      } else if (code === 'OX') {
+        setDirs(['NW','N','NE','SW','S','SE'], 'slide', 36);
+        promotesTo = 'Q';
+      } else if (code === 'WB') {
+        setDirs(['NW','NE','W','E','SW','SE'], 'slide', 36);
+        setDirs(['N','S'], 'range', 2);
+        promotesTo = 'FT';
+      } else if (
+        code.startsWith('L') && (lower.includes('left') || code === 'LC' || code === 'LE' || code === 'LG' || code === 'LT' || code === 'DL' || code === 'ML')
+      ) {
+        // Asymmetric Left-biased pieces
+        setDirs(['NW','N','SW'], 'slide', 36);
+        setDirs(['NE','E','SE','S'], 'step', 1);
+        promotesTo = 'Q';
+      } else if (
+        code.startsWith('R') && (lower.includes('right') || code === 'RC' || code === 'RI' || code === 'RG' || code === 'TT' || code === 'DR' || code === 'MR')
+      ) {
+        // Asymmetric Right-biased pieces
+        setDirs(['NE','N','SE'], 'slide', 36);
+        setDirs(['NW','W','SW','S'], 'step', 1);
+        promotesTo = 'Q';
+      } else if (lower.includes('vertical') || code.startsWith('V')) {
+        setDirs(['N','S'], 'slide', 36);
+        setDirs(['NW','NE'], 'range', 2);
+        promotesTo = 'Q';
+      } else if (lower.includes('side') || code === 'SA' || code === 'SF' || code === 'SI' || code === 'SL' || code === 'SS' || code === 'SX' || code === 'WF' || code === 'MK') {
+        setDirs(['W','E'], 'slide', 36);
+        setDirs(['NW','N','NE'], 'step', 1);
+        promotesTo = 'Q';
+      } else if (lower.includes('chariot')) {
+        setDirs(['N','S'], 'slide', 36);
+        setDirs(['W','E'], 'range', 2);
+        promotesTo = 'Q';
+      } else if (lower.includes('standard') || code === 'SD' || code === 'CN' || code === 'LS' || code === 'RS' || code === 'GE') {
+        setDirs(['NW','N','NE','W','E'], 'slide', 36);
+        setDirs(['SW','S','SE'], 'range', 2);
+        promotesTo = 'GE';
+      } else if (lower.includes('dragon') || lower.includes('dove') || lower.includes('eagle') || lower.includes('hawk') || lower.includes('bird') || lower.includes('goose') || lower.includes('swallow') || lower.includes('owl') || lower.includes('chicken') || lower.includes('crow') || lower.includes('sparrow') || lower.includes('kite')) {
+        setDirs(['NW','NE','SW','SE'], 'slide', 36);
+        setDirs(['N','S'], 'range', 2);
+        promotesTo = 'FE';
+      } else if (lower.includes('tiger') || lower.includes('bear') || lower.includes('stag') || lower.includes('wolf') || lower.includes('boar') || lower.includes('pup') || lower.includes('dog') || lower.includes('horse') || lower.includes('rabbit') || lower.includes('cat') || lower.includes('fox') || lower.includes('serpent') || lower.includes('turtle') || lower.includes('elephant')) {
+        setDirs(['NW','N','NE'], 'range', 3);
+        setDirs(['W','E','S'], 'step', 1);
+        if (code === 'FC' || code === 'TF' || code === 'PR') {
+          extraJumps = [[-3,-3],[-3,0],[-3,3]];
+        }
+        promotesTo = 'Q';
+      } else if (lower.includes('soldier') || lower.includes('barbarian') || lower.includes('officer') || lower.includes('cadet') || lower.includes('wrestler')) {
+        setDirs(['NW','N','NE'], 'range', 2);
+        setDirs(['W','E','S'], 'step', 1);
+        promotesTo = 'G';
+      } else if (lower.includes('demon') || lower.includes('spirit') || lower.includes('deva') || lower.includes('guardian')) {
+        setDirs(['NW','N','NE','SW','SE'], 'range', 5);
+        setDirs(['W','E','S'], 'range', 2);
+        promotesTo = 'Q';
+      } else {
+        // Generals (River, Mountain, Wood, Fire, Water, Ox, Horse, Pig, Chicken, Pup, etc.)
+        setDirs(['NW','N','NE'], 'range', 2);
+        setDirs(['S'], 'step', 1);
+        promotesTo = 'Q';
+      }
+
+      // Build human-readable Movement Rule & Tactical Limits / Blind Spots
+      const blindSpots = [];
+      const slideVectors = [];
+      const rangeVectors = [];
+      const stepVectors = [];
+
+      Object.entries(dirs).forEach(([dirKey, info]) => {
+        if (info.type === 'none') blindSpots.push(dirKey);
+        else if (info.type === 'slide') slideVectors.push(dirKey);
+        else if (info.type === 'hook') slideVectors.push(`${dirKey} (90° Hook)`);
+        else if (info.type === 'range') rangeVectors.push(`${dirKey} (up to ${info.max})`);
+        else if (info.type === 'jump') rangeVectors.push(`${dirKey} (Jump 2)`);
+        else if (info.type === 'step') stepVectors.push(dirKey);
+      });
+
+      let moveSummary = '';
+      if (special === 'knight') {
+        moveSummary = 'Jumps 2 squares forward and 1 square left or right (NNE / NNW), leaping over any intervening pieces.';
+      } else {
+        const parts = [];
+        if (slideVectors.length) parts.push(`Slides along [${slideVectors.join(', ')}]`);
+        if (rangeVectors.length) parts.push(`Ranges [${rangeVectors.join(', ')}]`);
+        if (stepVectors.length) parts.push(`Steps 1 square [${stepVectors.join(', ')}]`);
+        if (extraJumps.length && special !== 'lion') parts.push(`Can leap over obstacles to designated jump squares`);
+        if (special === 'lion') parts.push(`LION POWER: Can step twice per turn (including double captures or strike-and-return Igui) or jump 2 squares`);
+        if (special === 'fire') parts.push(`FIRE DEMON PASSIVE: Automatically burns and removes all adjacent enemy pieces at the end of any move`);
+        if (special === 'range_jump') parts.push(`GREAT GENERAL JUMP: Can jump over intervening pieces along its slide lines`);
+        moveSummary = parts.join('. ') + '.';
+      }
+
+      const limitBullets = [];
+      if (blindSpots.length > 0) {
+        limitBullets.push(`Blind Spots: Cannot move or attack toward [${blindSpots.join(', ')}]. Opponents can approach safely along these vectors.`);
+      } else {
+        limitBullets.push(`No directional blind spot around its immediate 8 neighbors, but watch range limits at distance.`);
+      }
+
+      if (rangeVectors.length > 0) {
+        limitBullets.push(`Range Limit: Limited-range rays stop after their maximum step count and cannot penetrate past blocking pieces.`);
+      }
+      if (slideVectors.length > 0 && special !== 'range_jump') {
+        limitBullets.push(`Blocking Limit: Sliding rays are halted by the first friendly or enemy piece in their path.`);
+      }
+      if (stepVectors.length > 0 && slideVectors.length === 0 && rangeVectors.length === 0 && extraJumps.length === 0) {
+        limitBullets.push(`Short Reach: Restricted to 1-square steps (${stepVectors.join(', ')}) — vulnerable to long-range Chariots, Bishops, and Generals.`);
+      }
+      if (special === 'knight') {
+        limitBullets.push(`Strict Forward Lock: Cannot move sideways, diagonally, or backward; becomes trapped on the last 2 ranks unless promoted.`);
+      }
+
+      // Build 5x5 Compass Matrix for UI rendering
+      const compass = [
+        [0,0,0,0,0],
+        [0,0,0,0,0],
+        [0,0,9,0,0],
+        [0,0,0,0,0],
+        [0,0,0,0,0]
+      ];
+      Object.entries(dirs).forEach(([dirKey, info]) => {
+        const [dr, dc] = DIRS_8[dirKey];
+        if (info.type === 'step') {
+          compass[2 + dr][2 + dc] = 1;
+        } else if (info.type === 'range') {
+          compass[2 + dr][2 + dc] = 1;
+          compass[2 + dr * 2][2 + dc * 2] = 3;
+        } else if (info.type === 'jump') {
+          compass[2 + dr * 2][2 + dc * 2] = 3;
+        } else if (info.type === 'slide') {
+          compass[2 + dr][2 + dc] = 2;
+          compass[2 + dr * 2][2 + dc * 2] = 2;
+        } else if (info.type === 'hook') {
+          compass[2 + dr][2 + dc] = 4;
+          compass[2 + dr * 2][2 + dc * 2] = 4;
+        }
+      });
+      extraJumps.forEach(([dr, dc]) => {
+        const r = 2 + dr, c = 2 + dc;
+        if (r >= 0 && r < 5 && c >= 0 && c < 5 && compass[r][c] === 0) compass[r][c] = 3;
+      });
+
+      return {
+        code,
+        name,
+        kanji,
+        isRoyal,
+        promotesTo,
+        dirs,
+        special,
+        extraJumps,
+        blindSpots,
+        moveSummary,
+        limitBullets,
+        compass
+      };
+    }
+
+    RAW_LEGEND.forEach(([code, name, kanji]) => {
+      PIECE_DB[code] = createPieceMovementSpec(code, name, kanji);
+    });
+
+    /*************************************************************************
+     * 4. CORE MOVE GENERATOR FOR ANY PIECE ON ANY BOARD SIZE (36x36 or 11x11)
+     *************************************************************************/
+    function inBoundsSize(r, c, N) {
+      return r >= 0 && r < N && c >= 0 && c < N;
+    }
+
+    function orientVector(dr, dc, owner) {
+      // Sente ('sente') moves UP (-r), Gote ('gote') moves DOWN (+r) with 180-deg rotation
+      return owner === 'sente' ? [dr, dc] : [-dr, -dc];
+    }
+
+    /**
+     * Computes legal moves, blocked ray squares (to visualize blocking limits),
+     * and blind-spot squares around a piece at (r, c).
+     */
+    function analyzePieceMovesOnBoard(board, r, c, isSecondLionStep = false) {
+      const N = board.length;
+      const piece = board[r][c];
+      if (!piece) return { moves: [], blockedSquares: [], blindSquares: [] };
+
+      const spec = PIECE_DB[piece.code];
+      const owner = piece.owner;
+      const moves = [];
+      const blockedSquares = [];
+      const blindSquares = [];
+      const seen = new Set();
+
+      const addLegal = (tr, tc, moveKind = 'normal', via = null) => {
+        if (!inBoundsSize(tr, tc, N)) return;
+        const occ = board[tr][tc];
+        if (occ && occ.owner === owner) {
+          blockedSquares.push({ r: tr, c: tc, reason: 'friendly' });
+          return;
+        }
+        const k = `${tr},${tc}`;
+        if (seen.has(k)) return;
+        seen.add(k);
+        moves.push({
+          r: tr,
+          c: tc,
+          kind: occ ? 'capture' : moveKind,
+          via
+        });
+      };
+
+      if (isSecondLionStep) {
+        Object.values(DIRS_8).forEach(([dr, dc]) => {
+          addLegal(r + dr, c + dc, 'lion2');
+        });
+        return { moves, blockedSquares, blindSquares };
+      }
+
+      // Check each of the 8 compass directions
+      Object.entries(spec.dirs).forEach(([dirKey, info]) => {
+        const [rawDr, rawDc] = DIRS_8[dirKey];
+        const [dr, dc] = orientVector(rawDr, rawDc, owner);
+
+        if (info.type === 'none') {
+          // Record immediate 2 squares in this direction as Blind Spot visualization
+          for (let d = 1; d <= 2; d++) {
+            const br = r + dr * d, bc = c + dc * d;
+            if (inBoundsSize(br, bc, N)) blindSquares.push({ r: br, c: bc, dir: dirKey });
+          }
+          return;
+        }
+
+        if (info.type === 'step') {
+          addLegal(r + dr, c + dc, 'step');
+          // Square beyond step 1 is beyond range limit
+          if (inBoundsSize(r + dr * 2, c + dc * 2, N)) {
+            blockedSquares.push({ r: r + dr * 2, c: c + dc * 2, reason: 'range_limit' });
+          }
+        } else if (info.type === 'jump') {
+          addLegal(r + dr * 2, c + dc * 2, 'jump');
+        } else if (info.type === 'range' || info.type === 'slide' || info.type === 'hook') {
+          const maxSteps = info.type === 'range' ? info.max : N;
+          let cr = r + dr;
+          let cc = c + dc;
+          let stepCount = 0;
+          let isBlocked = false;
+
+          while (inBoundsSize(cr, cc, N) && stepCount < maxSteps) {
+            stepCount++;
+            if (isBlocked) {
+              blockedSquares.push({ r: cr, c: cc, reason: 'obstructed' });
+              cr += dr;
+              cc += dc;
+              continue;
+            }
+
+            const occ = board[cr][cc];
+            if (!occ) {
+              addLegal(cr, cc, info.type);
+              // If hook mover, also branch 90-degrees from this empty square
+              if (info.type === 'hook' && stepCount <= 7) {
+                const perpDirs = (rawDr !== 0 && rawDc !== 0)
+                  ? [[-rawDr, rawDc], [rawDr, -rawDc]]
+                  : [[rawDc, rawDr], [-rawDc, -rawDr]];
+                perpDirs.forEach(([pdr, pdc]) => {
+                  const [odr2, odc2] = orientVector(pdr, pdc, owner);
+                  let hr = cr + odr2, hc = cc + odc2, hSteps = 0;
+                  while (inBoundsSize(hr, hc, N) && hSteps < 6) {
+                    hSteps++;
+                    const hOcc = board[hr][hc];
+                    if (!hOcc) {
+                      addLegal(hr, hc, 'hook', { r: cr, c: cc });
+                    } else {
+                      if (hOcc.owner !== owner) addLegal(hr, hc, 'hook', { r: cr, c: cc });
+                      break;
+                    }
+                    hr += odr2;
+                    hc += odc2;
+                  }
+                });
+              }
+            } else {
+              if (occ.owner !== owner) {
+                addLegal(cr, cc, 'capture');
+              } else {
+                blockedSquares.push({ r: cr, c: cc, reason: 'friendly' });
+              }
+              if (spec.special !== 'range_jump') {
+                isBlocked = true;
+              }
+            }
+            cr += dr;
+            cc += dc;
+          }
+          // Mark square right after range limit
+          if (info.type === 'range' && inBoundsSize(cr, cc, N)) {
+            blockedSquares.push({ r: cr, c: cc, reason: 'range_limit' });
+          }
+        }
+      });
+
+      // Extra Jumps (Knight, Kirin, Phoenix, Lion 2-square leap)
+      if (spec.extraJumps && spec.extraJumps.length > 0) {
+        spec.extraJumps.forEach(([rawDr, rawDc]) => {
+          const [dr, dc] = orientVector(rawDr, rawDc, owner);
+          addLegal(r + dr, c + dc, 'jump');
+        });
+      }
+
+      return { moves, blockedSquares, blindSquares };
+    }
+
+    /*************************************************************************
+     * 5. 36x36 MATCH STATE & BOARD INITIALIZATION
+     *************************************************************************/
+    const state = {
+      primaryView: 'match', // 'match' | 'tactics'
+      opponentMode: 'ai',   // 'pass' | 'ai' | 'p2p'
+      labelMode: 'both',    // 'both' | 'code'
+      gridSize: 36,
+      board: [],
+      turnOwner: 'sente',   // 'sente' (bottom, Black) | 'gote' (top, White)
+      moveNumber: 1,
+      moveHistory: [],
+      undoStack: [],
+
+      selectedCell: null,
+      legalMoves: [],
+      blockedOverlay: [],
+      hoveredCell: null,
+      locatedPieceCode: null,
+      inspectedCode: 'K',
+      inspectPromoted: false,
+      lionPendingCell: null,
+
+      camX: 0,
+      camY: 0,
+      cellSize: 32,
+      isDragging: false,
+      dragStartX: 0,
+      dragStartY: 0,
+      dragMoved: false,
+      lastMove: null,
+      gameOver: false
+    };
+
+    const canvas = document.getElementById('shogiCanvas');
+    const ctx = canvas.getContext('2d');
+    const minimapCanvas = document.getElementById('minimapCanvas');
+    const minimapCtx = minimapCanvas.getContext('2d');
+    const inspCompassCanvas = document.getElementById('inspCompassCanvas');
+    const inspCompassCtx = inspCompassCanvas.getContext('2d');
+
+    function makePiece(code, owner, promoted = false) {
+      return { code: code.trim(), owner, promoted };
+    }
+
+    function initMatchBoard() {
+      const N = 36;
+      state.gridSize = N;
+      state.board = Array.from({ length: N }, () => Array(N).fill(null));
+      state.turnOwner = 'sente';
+      state.moveNumber = 1;
+      state.moveHistory = [];
+      state.undoStack = [];
+      state.selectedCell = null;
+      state.legalMoves = [];
+      state.blockedOverlay = [];
+      state.locatedPieceCode = null;
+      state.lionPendingCell = null;
+      state.lastMove = null;
+      state.gameOver = false;
+
+      const placePair = (rankFromBack, col, code) => {
+        const senteRow = N - 1 - rankFromBack;
+        const goteRow = rankFromBack;
+        const goteCol = N - 1 - col;
+        state.board[senteRow][col] = makePiece(code, 'sente');
+        state.board[goteRow][goteCol] = makePiece(code, 'gote');
+      };
+
+      for (let c = 0; c < 36; c++) {
+        placePair(0, c, TAIKYOKU_36_ROWS.row0[c]);
+        placePair(1, c, TAIKYOKU_36_ROWS.row1[c]);
+        placePair(2, c, TAIKYOKU_36_ROWS.row2[c]);
+        placePair(3, c, TAIKYOKU_36_ROWS.row3[c]);
+        placePair(4, c, TAIKYOKU_36_ROWS.row4[c]);
+        placePair(5, c, TAIKYOKU_36_ROWS.row5[c]);
+        placePair(6, c, TAIKYOKU_36_ROWS.row6[c]);
+        placePair(7, c, TAIKYOKU_36_ROWS.row7[c]);
+        placePair(8, c, TAIKYOKU_36_ROWS.row8[c]);
+        placePair(9, c, TAIKYOKU_36_ROWS.row9[c]);
+        placePair(10, c, 'P');
+      }
+
+      // Rank 11 from back (12th rank): D at files 5, 14, 23, 32 (0-indexed: 4, 13, 22, 31) & GB at 10, 27 (0-indexed: 9, 26)
+      const vanguard = [
+        [4, 'D'], [9, 'GB'], [13, 'D'], [22, 'D'], [26, 'GB'], [31, 'D']
+      ];
+      vanguard.forEach(([col, code]) => placePair(11, col, code));
+
+      document.getElementById('moveLogContainer').innerHTML = '';
+      updateMatchStatusUI();
+      inspectPieceSpec('K');
+    }
+
+    /*************************************************************************
+     * 6. 36x36 MATCH MOVE EXECUTION, PROMOTION (11 RANKS) & AI
+     *************************************************************************/
+    function isPromotionZone36(row, owner) {
+      return owner === 'sente' ? row <= 10 : row >= 25;
+    }
+
+    function executeMatchMove(fromR, fromC, moveObj, broadcastP2P = true) {
+      const movingPiece = state.board[fromR][fromC];
+      if (!movingPiece) return;
+      const toR = moveObj.r;
+      const toC = moveObj.c;
+      const captured = state.board[toR][toC];
+
+      // Save lightweight snapshot for Undo
+      state.undoStack.push({
+        fromR, fromC, toR, toC,
+        movingCopy: { ...movingPiece },
+        capturedCopy: captured ? { ...captured } : null,
+        turnOwner: state.turnOwner,
+        moveNumber: state.moveNumber
+      });
+
+      state.board[toR][toC] = movingPiece;
+      state.board[fromR][fromC] = null;
+      state.lastMove = { fromR, fromC, toR, toC };
+
+      Sound.playKomaClack(!!captured);
+
+      // Fire Demon (DM) Passive: Burns all adjacent enemy pieces at end of move
+      let burnedCount = 0;
+      if (PIECE_DB[movingPiece.code].special === 'fire') {
+        Object.values(DIRS_8).forEach(([dr, dc]) => {
+          const nr = toR + dr, nc = toC + dc;
+          if (inBoundsSize(nr, nc, 36) && state.board[nr][nc] && state.board[nr][nc].owner !== movingPiece.owner) {
+            state.board[nr][nc] = null;
+            burnedCount++;
+          }
+        });
+      }
+
+      // Traditional Promotion upon entering or moving within the 11-rank enemy zone
+      const spec = PIECE_DB[movingPiece.code];
+      let promotedNow = false;
+      if (!movingPiece.promoted && spec.promotesTo && PIECE_DB[spec.promotesTo] &&
+          (isPromotionZone36(toR, movingPiece.owner) || isPromotionZone36(fromR, movingPiece.owner))) {
+        movingPiece.code = spec.promotesTo;
+        movingPiece.promoted = true;
+        promotedNow = true;
+      }
+
+      // Log Move in Official Shogi Coordinate Notation (File 36..1, Rank 1..36)
+      const sideSym = movingPiece.owner === 'sente' ? '▲' : '△';
+      const fileNum = 36 - toC;
+      const rankNum = toR + 1;
+      const capSym = captured ? `x[${captured.code}]` : '-';
+      const promoSym = promotedNow ? ` +(${movingPiece.code})` : '';
+      const burnSym = burnedCount > 0 ? ` 🔥Burned ${burnedCount}` : '';
+      appendMoveLog(`${state.moveNumber}. ${sideSym}[${spec.code}] ${fileNum}-${rankNum}${capSym}${promoSym}${burnSym}`, movingPiece.owner);
+
+      if (broadcastP2P && state.opponentMode === 'p2p' && P2P.conn && P2P.conn.open) {
+        P2P.send({
+          type: 'move',
+          fromR, fromC,
+          moveObj
+        });
+      }
+
+      checkMatchVictory();
+      if (state.gameOver) return;
+
+      // Check Lion / Free Eagle 2-step capability if single-step was taken
+      const currentSpec = PIECE_DB[movingPiece.code];
+      const dist = Math.max(Math.abs(toR - fromR), Math.abs(toC - fromC));
+      if (currentSpec.special === 'lion' && dist === 1 && !state.lionPendingCell &&
+          (state.opponentMode === 'pass' || movingPiece.owner === 'sente' || (state.opponentMode === 'p2p' && movingPiece.owner === P2P.mySide))) {
+        state.lionPendingCell = { r: toR, c: toC };
+        state.selectedCell = { r: toR, c: toC };
+        const analysis = analyzePieceMovesOnBoard(state.board, toR, toC, true);
+        state.legalMoves = analysis.moves;
+        document.getElementById('multiStepBanner').classList.remove('hidden');
+        document.getElementById('multiStepBanner').classList.add('flex');
+        updateMatchStatusUI();
+        return;
+      }
+
+      finishTurnTransition();
+    }
+
+    function finishLionSecondStep() {
+      if (state.opponentMode === 'p2p' && P2P.conn && P2P.conn.open) {
+        P2P.send({ type: 'end_lion' });
+      }
+      state.lionPendingCell = null;
+      document.getElementById('multiStepBanner').classList.add('hidden');
+      document.getElementById('multiStepBanner').classList.remove('flex');
+      finishTurnTransition();
+    }
+
+    function finishTurnTransition() {
+      state.lionPendingCell = null;
+      state.selectedCell = null;
+      state.legalMoves = [];
+      state.blockedOverlay = [];
+      document.getElementById('multiStepBanner').classList.add('hidden');
+      document.getElementById('multiStepBanner').classList.remove('flex');
+
+      state.turnOwner = state.turnOwner === 'sente' ? 'gote' : 'sente';
+      state.moveNumber++;
+      updateMatchStatusUI();
+
+      if (state.opponentMode === 'ai' && state.turnOwner === 'gote' && !state.gameOver) {
+        setTimeout(() => runGoteAIMove(), 260);
+      }
+    }
+
+    function runGoteAIMove() {
+      if (state.gameOver || state.turnOwner !== 'gote') return;
+      const candidates = [];
+      for (let r = 0; r < 36; r++) {
+        for (let c = 0; c < 36; c++) {
+          const p = state.board[r][c];
+          if (p && p.owner === 'gote') {
+            const { moves } = analyzePieceMovesOnBoard(state.board, r, c, false);
+            moves.forEach(m => {
+              let score = (m.r - r) * 8 + Math.random() * 12;
+              const target = state.board[m.r][m.c];
+              if (target && target.owner === 'sente') {
+                score += PIECE_DB[target.code].isRoyal ? 50000 : 400;
+              }
+              candidates.push({ fromR: r, fromC: c, move: m, score });
+            });
+          }
+        }
+      }
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.score - a.score);
+        const best = candidates[0];
+        executeMatchMove(best.fromR, best.fromC, best.move, false);
+      }
+    }
+
+    function checkMatchVictory() {
+      let senteRoyals = 0;
+      let goteRoyals = 0;
+      for (let r = 0; r < 36; r++) {
+        for (let c = 0; c < 36; c++) {
+          const p = state.board[r][c];
+          if (!p) continue;
+          if (PIECE_DB[p.code].isRoyal) {
+            if (p.owner === 'sente') senteRoyals++;
+            else goteRoyals++;
+          }
+        }
+      }
+      if (goteRoyals === 0) {
+        state.gameOver = true;
+        showVictoryBanner('▲ Sente (Black) Wins!', 'All of Gote’s Royal Commanders (K & CP) have been captured.');
+      } else if (senteRoyals === 0) {
+        state.gameOver = true;
+        showVictoryBanner('△ Gote (White) Wins!', 'All of Sente’s Royal Commanders (K & CP) have been captured.');
+      }
+    }
+
+    function undoLastMove() {
+      if (state.undoStack.length === 0) return;
+      const last = state.undoStack.pop();
+      state.board[last.fromR][last.fromC] = last.movingCopy;
+      state.board[last.toR][last.toC] = last.capturedCopy;
+      state.turnOwner = last.turnOwner;
+      state.moveNumber = last.moveNumber;
+      state.selectedCell = null;
+      state.legalMoves = [];
+      state.gameOver = false;
+      updateMatchStatusUI();
+    }
+
+    function resetMatchBoard() {
+      initMatchBoard();
+      fitMainBoard();
+      focusCamp('sente');
+    }
+
+    /*************************************************************************
+     * 7. 36x36 KAYA-WOOD BOARD CANVAS & MINIMAP RENDERER
+     *************************************************************************/
+    function resizeMainCanvas() {
+      const vp = document.getElementById('boardViewport');
+      if (!vp) return;
+      canvas.width = vp.clientWidth;
+      canvas.height = vp.clientHeight;
+    }
+
+    window.addEventListener('resize', () => {
+      resizeMainCanvas();
+      if (state.primaryView === 'match') fitMainBoard();
+    });
+
+    function fitMainBoard() {
+      resizeMainCanvas();
+      const pad = 28;
+      const w = Math.max(240, canvas.width - pad * 2);
+      const h = Math.max(240, canvas.height - pad * 2);
+      state.cellSize = Math.max(15, Math.min(64, Math.floor(Math.min(w, h) / 36)));
+      const boardPx = 36 * state.cellSize;
+      state.camX = Math.floor((canvas.width - boardPx) / 2);
+      state.camY = Math.floor((canvas.height - boardPx) / 2);
+    }
+
+    function zoomMainBoard(factor) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const wx = (cx - state.camX) / state.cellSize;
+      const wy = (cy - state.camY) / state.cellSize;
+      state.cellSize = Math.max(14, Math.min(82, state.cellSize * factor));
+      state.camX = cx - wx * state.cellSize;
+      state.camY = cy - wy * state.cellSize;
+    }
+
+    function focusCamp(target) {
+      if (state.cellSize < 34) state.cellSize = 36;
+      const midC = 18;
+      let targetR = 18;
+      if (target === 'sente') targetR = 29;
+      else if (target === 'gote') targetR = 6;
+      state.camX = canvas.width / 2 - midC * state.cellSize;
+      state.camY = canvas.height / 2 - targetR * state.cellSize;
+    }
+
+    function cycleLabelMode() {
+      state.labelMode = state.labelMode === 'both' ? 'code' : 'both';
+      document.getElementById('lblModeText').textContent = state.labelMode === 'both' ? 'Letter + Kanji' : 'Large Letter';
+      drawTacticsBoard();
+    }
+
+    function renderMatchLoop() {
+      if (state.primaryView === 'match') {
+        drawMainBoardCanvas();
+        drawMinimapCanvas();
+      }
+      requestAnimationFrame(renderMatchLoop);
+    }
+
+    function drawMainBoardCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const N = 36;
+      const cs = state.cellSize;
+      const ox = state.camX;
+      const oy = state.camY;
+      const totalPx = N * cs;
+
+      // Traditional Kaya Wood Board Outer Border
+      ctx.save();
+      ctx.fillStyle = '#c89d54';
+      ctx.strokeStyle = '#78531d';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.roundRect(ox - 18, oy - 18, totalPx + 36, totalPx + 36, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      const startC = Math.max(0, Math.floor((-ox) / cs));
+      const endC = Math.min(N - 1, Math.ceil((canvas.width - ox) / cs));
+      const startR = Math.max(0, Math.floor((-oy) / cs));
+      const endR = Math.min(N - 1, Math.ceil((canvas.height - oy) / cs));
+
+      // Draw Kaya Grid Squares
+      for (let r = startR; r <= endR; r++) {
+        for (let c = startC; c <= endC; c++) {
+          const x = ox + c * cs;
+          const y = oy + r * cs;
+          if (r <= 10 || r >= 25) {
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#DFB66C' : '#D7AD61';
+          } else {
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#E5BE77' : '#DDB56D';
+          }
+          ctx.fillRect(x, y, cs, cs);
+          ctx.strokeStyle = '#3b2810';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x, y, cs, cs);
+        }
+      }
+
+      // Promotion Zone Lines (Rank 11 & Rank 25)
+      ctx.strokeStyle = 'rgba(153, 27, 27, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(ox, oy + 11 * cs);
+      ctx.lineTo(ox + totalPx, oy + 11 * cs);
+      ctx.moveTo(ox, oy + 25 * cs);
+      ctx.lineTo(ox + totalPx, oy + 25 * cs);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // File & Rank Coordinates along Rim if zoomed enough
+      if (cs >= 22) {
+        ctx.fillStyle = '#291b0a';
+        ctx.font = `bold ${Math.min(11, Math.floor(cs * 0.32))}px "JetBrains Mono", monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let c = startC; c <= endC; c++) {
+          ctx.fillText(String(36 - c), ox + (c + 0.5) * cs, oy - 9);
+        }
+        for (let r = startR; r <= endR; r++) {
+          ctx.fillText(String(r + 1), ox + totalPx + 9, oy + (r + 0.5) * cs);
+        }
+      }
+
+      // Last Move Highlight
+      if (state.lastMove) {
+        const { fromR, fromC, toR, toC } = state.lastMove;
+        ctx.fillStyle = 'rgba(217, 119, 6, 0.32)';
+        ctx.fillRect(ox + fromC * cs, oy + fromR * cs, cs, cs);
+        ctx.fillStyle = 'rgba(217, 119, 6, 0.52)';
+        ctx.fillRect(ox + toC * cs, oy + toR * cs, cs, cs);
+      }
+
+      // Highlight Located Piece Code
+      if (state.locatedPieceCode) {
+        for (let r = startR; r <= endR; r++) {
+          for (let c = startC; c <= endC; c++) {
+            const p = state.board[r][c];
+            if (p && p.code === state.locatedPieceCode) {
+              ctx.fillStyle = 'rgba(14, 165, 233, 0.45)';
+              ctx.fillRect(ox + c * cs, oy + r * cs, cs, cs);
+              ctx.strokeStyle = '#0284c7';
+              ctx.lineWidth = 2.5;
+              ctx.strokeRect(ox + c * cs + 1, oy + r * cs + 1, cs - 2, cs - 2);
+            }
+          }
+        }
+      }
+
+      // Selected Cell & Legal Moves
+      if (state.selectedCell) {
+        const sx = ox + state.selectedCell.c * cs;
+        const sy = oy + state.selectedCell.r * cs;
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.42)';
+        ctx.fillRect(sx, sy, cs, cs);
+      }
+
+      state.legalMoves.forEach(m => {
+        if (m.r < startR || m.r > endR || m.c < startC || m.c > endC) return;
+        const mx = ox + m.c * cs;
+        const my = oy + m.r * cs;
+        if (m.kind === 'capture') {
+          ctx.fillStyle = 'rgba(225, 29, 72, 0.42)';
+          ctx.fillRect(mx, my, cs, cs);
+          ctx.strokeStyle = '#be123c';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(mx + 1.5, my + 1.5, cs - 3, cs - 3);
+        } else {
+          ctx.fillStyle = 'rgba(5, 150, 105, 0.28)';
+          ctx.fillRect(mx, my, cs, cs);
+          ctx.fillStyle = '#047857';
+          ctx.beginPath();
+          ctx.arc(mx + cs / 2, my + cs / 2, Math.max(3, cs * 0.15), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+
+      // Draw Pieces (Koma) with Upright Legend Letter + Kanji
+      for (let r = startR; r <= endR; r++) {
+        for (let c = startC; c <= endC; c++) {
+          const p = state.board[r][c];
+          if (!p) continue;
+          drawTraditionalKoma(ctx, p, ox + c * cs, oy + r * cs, cs);
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function drawTraditionalKoma(targetCtx, piece, x, y, cs) {
+      const spec = PIECE_DB[piece.code];
+      if (!spec) return;
+      const isSente = piece.owner === 'sente';
+
+      targetCtx.save();
+      targetCtx.translate(x + cs / 2, y + cs / 2);
+      if (!isSente) targetCtx.rotate(Math.PI);
+
+      const w = cs * 0.84;
+      const h = cs * 0.88;
+
+      targetCtx.beginPath();
+      targetCtx.moveTo(0, -h * 0.48);
+      targetCtx.lineTo(w * 0.43, -h * 0.26);
+      targetCtx.lineTo(w * 0.48, h * 0.46);
+      targetCtx.lineTo(-w * 0.48, h * 0.46);
+      targetCtx.lineTo(-w * 0.43, -h * 0.26);
+      targetCtx.closePath();
+
+      const grad = targetCtx.createLinearGradient(0, -h / 2, 0, h / 2);
+      if (spec.isRoyal) {
+        grad.addColorStop(0, '#fef08a');
+        grad.addColorStop(1, '#eab308');
+      } else if (piece.promoted) {
+        grad.addColorStop(0, '#fde68a');
+        grad.addColorStop(1, '#f59e0b');
+      } else {
+        grad.addColorStop(0, '#fffbeb');
+        grad.addColorStop(1, '#f3d79b');
+      }
+      targetCtx.fillStyle = grad;
+      targetCtx.fill();
+
+      targetCtx.lineWidth = Math.max(1.2, cs * 0.045);
+      targetCtx.strokeStyle = isSente ? '#1e293b' : '#991b1b';
+      targetCtx.stroke();
+      targetCtx.restore();
+
+      // Upright Legend Letter + Kanji
+      targetCtx.save();
+      targetCtx.textAlign = 'center';
+      targetCtx.textBaseline = 'middle';
+      const cx = x + cs / 2;
+      const cy = y + cs / 2;
+
+      if (state.labelMode === 'code' || cs < 24) {
+        const fontSz = Math.max(8, Math.floor(cs * 0.36));
+        targetCtx.font = `800 ${fontSz}px "JetBrains Mono", monospace`;
+        targetCtx.fillStyle = piece.promoted ? '#b91c1c' : '#111827';
+        targetCtx.fillText(spec.code, cx, cy + 1);
+      } else {
+        const codeSz = Math.max(7, Math.floor(cs * 0.24));
+        targetCtx.font = `800 ${codeSz}px "JetBrains Mono", monospace`;
+        targetCtx.fillStyle = isSente ? '#0f172a' : '#991b1b';
+        targetCtx.fillText(spec.code, cx, cy - cs * 0.17);
+
+        const kanjiSz = Math.max(8, Math.floor(cs * 0.28));
+        targetCtx.font = `900 ${kanjiSz}px "Noto Serif JP", serif`;
+        targetCtx.fillStyle = piece.promoted ? '#b91c1c' : '#111827';
+        targetCtx.fillText(spec.kanji.slice(0, 2), cx, cy + cs * 0.15);
+      }
+      targetCtx.restore();
+    }
+
+    function drawMinimapCanvas() {
+      const mw = minimapCanvas.width;
+      const mh = minimapCanvas.height;
+      minimapCtx.clearRect(0, 0, mw, mh);
+      const N = 36;
+      const tw = mw / N;
+      const th = mh / N;
+
+      minimapCtx.fillStyle = '#c89d54';
+      minimapCtx.fillRect(0, 0, mw, mh);
+
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          const p = state.board[r][c];
+          if (!p) continue;
+          if (state.locatedPieceCode && p.code === state.locatedPieceCode) {
+            minimapCtx.fillStyle = '#0284c7';
+          } else if (PIECE_DB[p.code].isRoyal) {
+            minimapCtx.fillStyle = '#dc2626';
+          } else {
+            minimapCtx.fillStyle = p.owner === 'sente' ? '#0f172a' : '#fffbeb';
+          }
+          minimapCtx.fillRect(c * tw, r * th, Math.max(2, tw - 0.5), Math.max(2, th - 0.5));
+        }
+      }
+
+      const vx = (-state.camX / (N * state.cellSize)) * mw;
+      const vy = (-state.camY / (N * state.cellSize)) * mh;
+      const vw = (canvas.width / (N * state.cellSize)) * mw;
+      const vh = (canvas.height / (N * state.cellSize)) * mh;
+      minimapCtx.strokeStyle = '#b91c1c';
+      minimapCtx.lineWidth = 1.5;
+      minimapCtx.strokeRect(vx, vy, vw, vh);
+    }
+
+    minimapCanvas.addEventListener('mousedown', (e) => panFromMinimap(e));
+    minimapCanvas.addEventListener('mousemove', (e) => { if (e.buttons === 1) panFromMinimap(e); });
+
+    function panFromMinimap(e) {
+      const rect = minimapCanvas.getBoundingClientRect();
+      const nx = (e.clientX - rect.left) / rect.width;
+      const ny = (e.clientY - rect.top) / rect.height;
+      const totalPx = 36 * state.cellSize;
+      state.camX = canvas.width / 2 - nx * totalPx;
+      state.camY = canvas.height / 2 - ny * totalPx;
+    }
+
+    /*************************************************************************
+     * 8. MAIN BOARD MOUSE INTERACTION
+     *************************************************************************/
+    function clientToBoardCell(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      const c = Math.floor((clientX - rect.left - state.camX) / state.cellSize);
+      const r = Math.floor((clientY - rect.top - state.camY) / state.cellSize);
+      return { r, c };
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+      state.isDragging = true;
+      state.dragStartX = e.clientX - state.camX;
+      state.dragStartY = e.clientY - state.camY;
+      state.dragMoved = false;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (state.isDragging && state.primaryView === 'match') {
+        const dx = (e.clientX - state.camX) - state.dragStartX;
+        const dy = (e.clientY - state.camY) - state.dragStartY;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+          state.dragMoved = true;
+          state.camX = e.clientX - state.dragStartX;
+          state.camY = e.clientY - state.dragStartY;
+        }
+      }
+      if (state.primaryView === 'match') {
+        const { r, c } = clientToBoardCell(e.clientX, e.clientY);
+        if (inBoundsSize(r, c, 36)) {
+          const p = state.board[r][c];
+          document.getElementById('hoverCoordsLabel').textContent =
+            `File ${36 - c}, Rank ${r + 1}${p ? ` • [${p.code}] ${PIECE_DB[p.code].name}` : ''}`;
+        }
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (!state.isDragging) return;
+      state.isDragging = false;
+      if (!state.dragMoved && e.target === canvas && e.button === 0) {
+        const { r, c } = clientToBoardCell(e.clientX, e.clientY);
+        if (inBoundsSize(r, c, 36)) onMainBoardCellClick(r, c);
+      }
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoomMainBoard(e.deltaY < 0 ? 1.12 : 0.88);
+    }, { passive: false });
+
+    function onMainBoardCellClick(r, c) {
+      state.locatedPieceCode = null;
+      const clicked = state.board[r][c];
+      if (clicked) inspectPieceSpec(clicked.code);
+
+      if (state.gameOver) return;
+      if (state.opponentMode === 'ai' && state.turnOwner !== 'sente') return;
+      if (state.opponentMode === 'p2p' && P2P.conn && P2P.conn.open && state.turnOwner !== P2P.mySide) return;
+
+      // If in Lion second-step mode
+      if (state.lionPendingCell) {
+        const mv = state.legalMoves.find(m => m.r === r && m.c === c);
+        if (mv) {
+          executeMatchMove(state.lionPendingCell.r, state.lionPendingCell.c, mv, true);
+        }
+        return;
+      }
+
+      // Check if clicking a valid destination square for selected piece
+      if (state.selectedCell) {
+        const mv = state.legalMoves.find(m => m.r === r && m.c === c);
+        if (mv) {
+          executeMatchMove(state.selectedCell.r, state.selectedCell.c, mv, true);
+          return;
+        }
+      }
+
+      // Select friendly piece
+      if (clicked && clicked.owner === state.turnOwner) {
+        state.selectedCell = { r, c };
+        const analysis = analyzePieceMovesOnBoard(state.board, r, c, false);
+        state.legalMoves = analysis.moves;
+        state.blockedOverlay = analysis.blockedSquares;
+        Sound.playKomaClack(false);
+      } else {
+        state.selectedCell = null;
+        state.legalMoves = [];
+        state.blockedOverlay = [];
+      }
+    }
+
+    /*************************************************************************
+     * 9. PIECE INSPECTOR & SIDEBAR / MODAL LEGEND UPDATERS
+     *************************************************************************/
+    function inspectPieceSpec(code, showPromo = false) {
+      const base = PIECE_DB[code];
+      if (!base) return;
+      state.inspectedCode = code;
+      state.inspectPromoted = showPromo;
+
+      const activeCode = (showPromo && base.promotesTo && PIECE_DB[base.promotesTo]) ? base.promotesTo : code;
+      const spec = PIECE_DB[activeCode];
+
+      document.getElementById('inspName').textContent = spec.name;
+      document.getElementById('inspSub').textContent = `Legend: [${spec.code}] • ${spec.kanji}`;
+      document.getElementById('inspCodeBadge').textContent = spec.code;
+      document.getElementById('inspKomaCode').textContent = spec.code;
+      document.getElementById('inspKomaKanji').textContent = spec.kanji.slice(0, 2);
+      document.getElementById('inspMoveDesc').textContent = spec.moveSummary;
+      document.getElementById('inspLimitsDesc').textContent = spec.limitBullets.join(' ');
+
+      const btnFlip = document.getElementById('btnFlipPromo');
+      if (base.promotesTo && PIECE_DB[base.promotesTo]) {
+        const pSpec = PIECE_DB[base.promotesTo];
+        document.getElementById('inspPromoLine').textContent = showPromo
+          ? `Base: [${base.code}] ${base.name}`
+          : `Promotes → [${pSpec.code}] ${pSpec.name}`;
+        btnFlip.classList.remove('hidden');
+      } else {
+        document.getElementById('inspPromoLine').textContent = spec.isRoyal ? 'Royal Commander' : 'Does Not Promote';
+        btnFlip.classList.add('hidden');
+      }
+
+      drawCompassMatrixOnCanvas(inspCompassCtx, inspCompassCanvas.width, spec);
+    }
+
+    function toggleInspectorPromo() {
+      inspectPieceSpec(state.inspectedCode, !state.inspectPromoted);
+    }
+
+    function drawCompassMatrixOnCanvas(cCtx, size, spec) {
+      const cell = size / 5;
+      cCtx.clearRect(0, 0, size, size);
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const val = spec.compass[r][c];
+          const x = c * cell, y = r * cell;
+          cCtx.fillStyle = (r + c) % 2 === 0 ? '#0f172a' : '#1e293b';
+          cCtx.fillRect(x, y, cell, cell);
+          cCtx.strokeStyle = '#334155';
+          cCtx.strokeRect(x, y, cell, cell);
+
+          if (val === 9) {
+            cCtx.fillStyle = '#f59e0b';
+            cCtx.fillRect(x + 2, y + 2, cell - 4, cell - 4);
+            cCtx.fillStyle = '#020617';
+            cCtx.font = 'bold 9px "JetBrains Mono"';
+            cCtx.textAlign = 'center';
+            cCtx.textBaseline = 'middle';
+            cCtx.fillText(spec.code, x + cell / 2, y + cell / 2);
+          } else if (val === 1) {
+            cCtx.fillStyle = '#34d399';
+            cCtx.beginPath();
+            cCtx.arc(x + cell / 2, y + cell / 2, 5, 0, Math.PI * 2);
+            cCtx.fill();
+          } else if (val === 2) {
+            cCtx.fillStyle = '#38bdf8';
+            cCtx.fillRect(x + 5, y + 5, cell - 10, cell - 10);
+          } else if (val === 3) {
+            cCtx.fillStyle = '#fbbf24';
+            cCtx.beginPath();
+            cCtx.arc(x + cell / 2, y + cell / 2, 5.5, 0, Math.PI * 2);
+            cCtx.fill();
+          } else if (val === 4) {
+            cCtx.fillStyle = '#e879f9';
+            cCtx.fillRect(x + 4, y + 4, cell - 8, cell - 8);
+          }
+        }
+      }
+    }
+
+    function locatePieceOnBoard(code) {
+      switchPrimaryView('match');
+      state.locatedPieceCode = code;
+      for (let r = 35; r >= 0; r--) {
+        for (let c = 0; c < 36; c++) {
+          const p = state.board[r][c];
+          if (p && p.code === code) {
+            if (state.cellSize < 34) state.cellSize = 36;
+            state.camX = canvas.width / 2 - (c + 0.5) * state.cellSize;
+            state.camY = canvas.height / 2 - (r + 0.5) * state.cellSize;
+            return;
+          }
+        }
+      }
+    }
+
+    function renderSidebarLegend() {
+      const container = document.getElementById('sidebarLegendContainer');
+      if (!container) return;
+      const q = (document.getElementById('sidebarSearchInput')?.value || '').trim().toLowerCase();
+      container.innerHTML = '';
+
+      RAW_LEGEND.forEach(([code, name, kanji]) => {
+        if (q && !code.toLowerCase().includes(q) && !name.toLowerCase().includes(q) && !kanji.includes(q)) return;
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between px-2 py-1 rounded bg-slate-950/90 hover:bg-amber-500/20 border border-slate-800 hover:border-amber-500/40 cursor-pointer transition';
+        row.onclick = () => {
+          inspectPieceSpec(code);
+          state.locatedPieceCode = code;
+        };
+        row.innerHTML = `
+          <div class="flex items-center gap-1.5 truncate">
+            <span class="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/40 font-mono-code font-bold text-amber-300 text-[10px] min-w-[26px] text-center">${code}</span>
+            <span class="text-slate-200 truncate">${name}</span>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="font-kanji text-slate-400 text-[10px]">${kanji}</span>
+            <button onclick="event.stopPropagation(); openPieceTacticsTrainer('${code}')" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-amber-300 text-[9px] font-semibold" title="Practice Piece Tactics & Limits">
+              Drill
+            </button>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function updateMatchStatusUI() {
+      let sCount = 0, gCount = 0;
+      const sRoyals = [], gRoyals = [];
+      for (let r = 0; r < 36; r++) {
+        for (let c = 0; c < 36; c++) {
+          const p = state.board[r][c];
+          if (!p) continue;
+          if (p.owner === 'sente') {
+            sCount++;
+            if (PIECE_DB[p.code].isRoyal) sRoyals.push(p.code);
+          } else {
+            gCount++;
+            if (PIECE_DB[p.code].isRoyal) gRoyals.push(p.code);
+          }
+        }
+      }
+
+      document.getElementById('senteRoyalsLabel').textContent = `Royals: ${sRoyals.join(', ') || 'None'} (${sRoyals.length})`;
+      document.getElementById('senteCountLabel').textContent = `• ${sCount} Pieces`;
+      document.getElementById('goteRoyalsLabel').textContent = `Royals: ${gRoyals.join(', ') || 'None'} (${gRoyals.length})`;
+      document.getElementById('goteCountLabel').textContent = `• ${gCount} Pieces`;
+      document.getElementById('minimapCountText').textContent = `${sCount + gCount} Pieces`;
+      document.getElementById('moveCounterLabel').textContent = `${state.moveNumber - 1} Moves`;
+
+      const badge = document.getElementById('turnIndicatorBadge');
+      if (state.turnOwner === 'sente') {
+        badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-sky-400"></span><span>Move ${state.moveNumber} • ▲ Sente (Black)</span>`;
+      } else {
+        badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span><span>Move ${state.moveNumber} • △ Gote (White)</span>`;
+      }
+    }
+
+    function appendMoveLog(text, owner) {
+      const container = document.getElementById('moveLogContainer');
+      const div = document.createElement('div');
+      div.className = `${owner === 'sente' ? 'text-sky-300' : 'text-rose-300'} border-b border-slate-800/60 pb-0.5`;
+      div.textContent = text;
+      container.prepend(div);
+    }
+
+    /*************************************************************************
+     * 10. 208-PIECE TACTICS, PUZZLES & LIMITS DOJO ENGINE (11x11 BOARD)
+     *************************************************************************/
+    const tacticsState = {
+      currentCode: 'AB',
+      drillMode: 'offense', // 'offense' | 'blindspot' | 'sandbox'
+      testPromoted: false,
+      board: [],            // 11x11 grid
+      playerPos: { r: 6, c: 5 },
+      targetsRemaining: 0,
+      movesUsed: 0,
+      parMoves: 2,
+      dangerSquares: new Set(),
+      solvedMap: {},
+      completed: false
+    };
+
+    const tacticsCanvas = document.getElementById('tacticsCanvas');
+    const tacticsCtx = tacticsCanvas.getContext('2d');
+
+    function loadSolvedTacticsProgress() {
+      try {
+        const saved = localStorage.getItem('taikyoku_208_tactics_solved');
+        if (saved) tacticsState.solvedMap = JSON.parse(saved);
+      } catch (e) {}
+      updateTacticsProgressUI();
+    }
+
+    function markPieceTacticSolved(code) {
+      tacticsState.solvedMap[code] = true;
+      try {
+        localStorage.setItem('taikyoku_208_tactics_solved', JSON.stringify(tacticsState.solvedMap));
+      } catch (e) {}
+      updateTacticsProgressUI();
+      renderTacticsPieceList();
+    }
+
+    function updateTacticsProgressUI() {
+      const count = Object.keys(tacticsState.solvedMap).length;
+      document.getElementById('headerSolvedBadge').textContent = `${count}/208`;
+      document.getElementById('tacticsProgressCount').textContent = `${count} / 208 Solved`;
+      document.getElementById('tacticsProgressBar').style.width = `${Math.min(100, (count / 208) * 100)}%`;
+    }
+
+    function openPieceTacticsTrainer(code) {
+      switchPrimaryView('tactics');
+      selectTacticsPiece(code || 'AB');
+    }
+
+    function selectTacticsPiece(code) {
+      if (!PIECE_DB[code]) return;
+      tacticsState.currentCode = code;
+      tacticsState.testPromoted = false;
+      document.getElementById('chkTestPromotedInDojo').checked = false;
+      setupTacticsPuzzleBoard();
+      renderTacticsRightPanel();
+      renderTacticsPieceList();
+    }
+
+    function setTacticsDrillMode(mode) {
+      tacticsState.drillMode = mode;
+      const bOff = document.getElementById('btnDrillOffense');
+      const bBli = document.getElementById('btnDrillBlindspot');
+      const bSan = document.getElementById('btnDrillSandbox');
+      [bOff, bBli, bSan].forEach(b => b.className = 'px-2.5 py-1 rounded-md font-semibold text-slate-300 hover:text-white');
+      if (mode === 'offense') bOff.className = 'px-2.5 py-1 rounded-md font-semibold bg-amber-500 text-slate-950';
+      if (mode === 'blindspot') bBli.className = 'px-2.5 py-1 rounded-md font-semibold bg-amber-500 text-slate-950';
+      if (mode === 'sandbox') bSan.className = 'px-2.5 py-1 rounded-md font-semibold bg-amber-500 text-slate-950';
+      setupTacticsPuzzleBoard();
+    }
+
+    function togglePromotedInDojo(checked) {
+      tacticsState.testPromoted = checked;
+      setupTacticsPuzzleBoard();
+      renderTacticsRightPanel();
+    }
+
+    /**
+     * Deterministically generates a custom, solvable 11x11 tactical challenge
+     * for any of the 208 pieces based on its exact movement vectors & blind spots.
+     */
+    function setupTacticsPuzzleBoard() {
+      const N = 11;
+      tacticsState.board = Array.from({ length: N }, () => Array(N).fill(null));
+      tacticsState.dangerSquares = new Set();
+      tacticsState.movesUsed = 0;
+      tacticsState.completed = false;
+
+      const baseSpec = PIECE_DB[tacticsState.currentCode];
+      const activeCode = (tacticsState.testPromoted && baseSpec.promotesTo && PIECE_DB[baseSpec.promotesTo])
+        ? baseSpec.promotesTo
+        : tacticsState.currentCode;
+      const spec = PIECE_DB[activeCode];
+
+      document.getElementById('puzzlePieceBadge').textContent = spec.code;
+      document.getElementById('puzzleTitle').textContent = `${spec.name} (${spec.kanji}) — [${spec.code}]`;
+
+      if (tacticsState.drillMode === 'offense') {
+        // DRILL 1: Precision Capture & Obstacle / Range Limit Navigation
+        const startR = 7, startC = 5;
+        tacticsState.playerPos = { r: startR, c: startC };
+        tacticsState.board[startR][startC] = makePiece(activeCode, 'sente', tacticsState.testPromoted);
+
+        // Place a friendly blocker on an adjacent square to demonstrate blocking vs jumping/hooking
+        if (spec.special !== 'knight') {
+          tacticsState.board[6][4] = makePiece('P', 'sente');
+        }
+
+        // Compute legal first moves from (7, 5)
+        const step1 = analyzePieceMovesOnBoard(tacticsState.board, startR, startC, false).moves;
+        let chosenStep1 = step1[0] || { r: 6, c: 5 };
+        // Prefer furthest or special move
+        step1.forEach(m => {
+          const dist = Math.abs(m.r - startR) + Math.abs(m.c - startC);
+          const bestDist = Math.abs(chosenStep1.r - startR) + Math.abs(chosenStep1.c - startC);
+          if (dist > bestDist || m.kind === 'hook' || m.kind === 'jump') chosenStep1 = m;
+        });
+
+        // Simulate step 2 from chosenStep1 to place a 2-move target sequence
+        const tempBoard = tacticsState.board.map(row => row.slice());
+        tempBoard[chosenStep1.r][chosenStep1.c] = tempBoard[startR][startC];
+        tempBoard[startR][startC] = null;
+        const step2 = analyzePieceMovesOnBoard(tempBoard, chosenStep1.r, chosenStep1.c, false).moves;
+        let chosenStep2 = step2.find(m => m.r !== startR || m.c !== startC) || chosenStep1;
+        step2.forEach(m => {
+          if (m.r < chosenStep2.r) chosenStep2 = m;
+        });
+
+        // Place Target Commander at chosenStep2 (or chosenStep1 if 1-move puzzle)
+        if (chosenStep2.r === chosenStep1.r && chosenStep2.c === chosenStep1.c) {
+          tacticsState.board[chosenStep1.r][chosenStep1.c] = makePiece('K', 'gote');
+          tacticsState.targetsRemaining = 1;
+          tacticsState.parMoves = 1;
+        } else {
+          tacticsState.board[chosenStep1.r][chosenStep1.c] = makePiece('G', 'gote');
+          tacticsState.board[chosenStep2.r][chosenStep2.c] = makePiece('K', 'gote');
+          tacticsState.targetsRemaining = 2;
+          tacticsState.parMoves = 2;
+        }
+
+        document.getElementById('puzzleInstructionText').textContent =
+          `Capture all enemy targets (${tacticsState.targetsRemaining}) within ${tacticsState.parMoves} move(s) using [${spec.code}] ${spec.name}'s exact movement vectors!`;
+        document.getElementById('puzzleMovesRemaining').textContent =
+          `Moves: 0 / ${tacticsState.parMoves}`;
+
+      } else if (tacticsState.drillMode === 'blindspot') {
+        // DRILL 2: Exploit the Piece's Blind Spot or Range Limit!
+        const bossR = 5, bossC = 5;
+        tacticsState.board[bossR][bossC] = makePiece(activeCode, 'gote', tacticsState.testPromoted);
+
+        // Compute all squares guarded by the Gote boss piece at (5,5)
+        const bossAnalysis = analyzePieceMovesOnBoard(tacticsState.board, bossR, bossC, false);
+        bossAnalysis.moves.forEach(m => {
+          tacticsState.dangerSquares.add(`${m.r},${m.c}`);
+        });
+
+        // Place Sente's agile Striker (Gold General or Free King) outside danger zone
+        const startR = 8, startC = 5;
+        // Ensure start square isn't guarded; if it is, shift to (8, 3)
+        const safeStart = tacticsState.dangerSquares.has('8,5') ? { r: 8, c: 3 } : { r: 8, c: 5 };
+        tacticsState.playerPos = safeStart;
+        tacticsState.board[safeStart.r][safeStart.c] = makePiece('G', 'sente');
+        tacticsState.targetsRemaining = 1;
+        tacticsState.parMoves = 4;
+
+        document.getElementById('puzzleInstructionText').textContent =
+          `BLIND-SPOT DRILL: Enemy [${spec.code}] guards the red squares! Maneuver your Gold General [G] through its unguarded blind spot to capture [${spec.code}] in ≤4 moves!`;
+        document.getElementById('puzzleMovesRemaining').textContent = `Moves: 0 / 4`;
+
+      } else {
+        // DRILL 3: Free 11x11 Sandbox
+        tacticsState.playerPos = { r: 5, c: 5 };
+        tacticsState.board[5][5] = makePiece(activeCode, 'sente', tacticsState.testPromoted);
+        tacticsState.board[3][5] = makePiece('P', 'sente'); // Sample friendly blocker
+        tacticsState.board[3][3] = makePiece('G', 'gote');  // Sample enemy target
+        tacticsState.board[5][8] = makePiece('S', 'gote');
+        tacticsState.targetsRemaining = 0;
+        tacticsState.parMoves = 99;
+        document.getElementById('puzzleInstructionText').textContent =
+          `SANDBOX: Click any green square to move [${spec.code}]. Right-click any empty square to toggle a test piece and observe how obstacles block its rays!`;
+        document.getElementById('puzzleMovesRemaining').textContent = `Sandbox Mode`;
+      }
+
+      drawTacticsBoard();
+    }
+
+    function drawTacticsBoard() {
+      const N = 11;
+      const cs = tacticsCanvas.width / N; // 42px
+      tacticsCtx.clearRect(0, 0, tacticsCanvas.width, tacticsCanvas.height);
+
+      const showOverlays = document.getElementById('chkShowLimitsOverlay')?.checked;
+      const { r: pr, c: pc } = tacticsState.playerPos;
+      const analysis = analyzePieceMovesOnBoard(tacticsState.board, pr, pc, false);
+
+      // 1. Draw 11x11 Kaya Grid
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          const x = c * cs, y = r * cs;
+          tacticsCtx.fillStyle = (r + c) % 2 === 0 ? '#e5be77' : '#ddb56d';
+          tacticsCtx.fillRect(x, y, cs, cs);
+          tacticsCtx.strokeStyle = '#3b2810';
+          tacticsCtx.lineWidth = 1;
+          tacticsCtx.strokeRect(x, y, cs, cs);
+        }
+      }
+
+      // 2. Draw Overlays (Blind Spots, Blocked Rays, Danger Squares, Legal Moves)
+      if (showOverlays) {
+        // Blind spots (Indigo)
+        analysis.blindSquares.forEach(bs => {
+          tacticsCtx.fillStyle = 'rgba(99, 102, 241, 0.35)';
+          tacticsCtx.fillRect(bs.c * cs + 1, bs.r * cs + 1, cs - 2, cs - 2);
+          tacticsCtx.fillStyle = '#312e81';
+          tacticsCtx.font = 'bold 8px "JetBrains Mono"';
+          tacticsCtx.textAlign = 'center';
+          tacticsCtx.fillText('BLIND', (bs.c + 0.5) * cs, (bs.r + 0.5) * cs + 3);
+        });
+
+        // Blocked / Range Limit Squares (Amber)
+        analysis.blockedSquares.forEach(bl => {
+          if (tacticsState.board[bl.r][bl.c]) return;
+          tacticsCtx.fillStyle = 'rgba(245, 158, 11, 0.36)';
+          tacticsCtx.fillRect(bl.c * cs + 1, bl.r * cs + 1, cs - 2, cs - 2);
+          tacticsCtx.fillStyle = '#78350f';
+          tacticsCtx.font = 'bold 8px "JetBrains Mono"';
+          tacticsCtx.textAlign = 'center';
+          tacticsCtx.fillText(bl.reason === 'range_limit' ? 'LIMIT' : 'BLOCK', (bl.c + 0.5) * cs, (bl.r + 0.5) * cs + 3);
+        });
+      }
+
+      // Enemy Guarded Danger Squares (in Blind-Spot Drill)
+      tacticsState.dangerSquares.forEach(key => {
+        const [dr, dc] = key.split(',').map(Number);
+        tacticsCtx.fillStyle = 'rgba(225, 29, 72, 0.36)';
+        tacticsCtx.fillRect(dc * cs + 1, dr * cs + 1, cs - 2, cs - 2);
+      });
+
+      // Highlight Player Current Square
+      tacticsCtx.fillStyle = 'rgba(14, 165, 233, 0.35)';
+      tacticsCtx.fillRect(pc * cs, pr * cs, cs, cs);
+
+      // Legal Moves (Emerald)
+      analysis.moves.forEach(m => {
+        const mx = m.c * cs, my = m.r * cs;
+        tacticsCtx.fillStyle = m.kind === 'capture' ? 'rgba(16, 185, 129, 0.55)' : 'rgba(16, 185, 129, 0.35)';
+        tacticsCtx.fillRect(mx + 1, my + 1, cs - 2, cs - 2);
+        tacticsCtx.strokeStyle = '#047857';
+        tacticsCtx.lineWidth = 2;
+        tacticsCtx.strokeRect(mx + 2, my + 2, cs - 4, cs - 4);
+      });
+
+      // 3. Draw All Pieces on 11x11 Tactics Board
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          const p = tacticsState.board[r][c];
+          if (!p) continue;
+          drawTraditionalKoma(tacticsCtx, p, c * cs, r * cs, cs);
+        }
+      }
+    }
+
+    tacticsCanvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (tacticsState.drillMode !== 'sandbox') return;
+      const rect = tacticsCanvas.getBoundingClientRect();
+      const cs = tacticsCanvas.width / 11;
+      const c = Math.floor((e.clientX - rect.left) / cs);
+      const r = Math.floor((e.clientY - rect.top) / cs);
+      if (!inBoundsSize(r, c, 11)) return;
+      if (r === tacticsState.playerPos.r && c === tacticsState.playerPos.c) return;
+
+      const cur = tacticsState.board[r][c];
+      if (!cur) tacticsState.board[r][c] = makePiece('P', 'sente');
+      else if (cur.owner === 'sente') tacticsState.board[r][c] = makePiece('G', 'gote');
+      else tacticsState.board[r][c] = null;
+      drawTacticsBoard();
+    });
+
+    tacticsCanvas.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || tacticsState.completed) return;
+      const rect = tacticsCanvas.getBoundingClientRect();
+      const cs = tacticsCanvas.width / 11;
+      const c = Math.floor((e.clientX - rect.left) / cs);
+      const r = Math.floor((e.clientY - rect.top) / cs);
+      if (!inBoundsSize(r, c, 11)) return;
+
+      const { r: pr, c: pc } = tacticsState.playerPos;
+      const analysis = analyzePieceMovesOnBoard(tacticsState.board, pr, pc, false);
+      const legal = analysis.moves.find(m => m.r === r && m.c === c);
+      if (!legal) return;
+
+      // Check if stepping into a guarded danger square in Blind-Spot mode
+      if (tacticsState.drillMode === 'blindspot' && tacticsState.dangerSquares.has(`${r},${c}`)) {
+        document.getElementById('puzzleInstructionText').innerHTML =
+          `<span class="text-rose-400 font-bold">Stepped into [${tacticsState.currentCode}]'s attack vector! Try approaching through its Blind Spot.</span>`;
+        Sound.playKomaClack(true);
+        setTimeout(() => setupTacticsPuzzleBoard(), 950);
+        return;
+      }
+
+      const target = tacticsState.board[r][c];
+      const moving = tacticsState.board[pr][pc];
+      tacticsState.board[r][c] = moving;
+      tacticsState.board[pr][pc] = null;
+      tacticsState.playerPos = { r, c };
+      tacticsState.movesUsed++;
+
+      // Fire Demon Passive in Dojo
+      if (PIECE_DB[moving.code].special === 'fire') {
+        Object.values(DIRS_8).forEach(([dr, dc]) => {
+          const nr = r + dr, nc = c + dc;
+          if (inBoundsSize(nr, nc, 11) && tacticsState.board[nr][nc] && tacticsState.board[nr][nc].owner === 'gote') {
+            tacticsState.board[nr][nc] = null;
+            if (tacticsState.targetsRemaining > 0) tacticsState.targetsRemaining--;
+          }
+        });
+      }
+
+      if (target && target.owner === 'gote' && tacticsState.targetsRemaining > 0) {
+        tacticsState.targetsRemaining--;
+      }
+
+      Sound.playKomaClack(!!target);
+      drawTacticsBoard();
+
+      if (tacticsState.drillMode !== 'sandbox') {
+        document.getElementById('puzzleMovesRemaining').textContent =
+          `Moves: ${tacticsState.movesUsed} / ${tacticsState.parMoves}`;
+
+        if (tacticsState.targetsRemaining <= 0) {
+          tacticsState.completed = true;
+          Sound.playSolvedChime();
+          markPieceTacticSolved(tacticsState.currentCode);
+          document.getElementById('puzzleInstructionText').innerHTML =
+            `<span class="text-emerald-400 font-bold">★ MASTERED [${tacticsState.currentCode}] ${PIECE_DB[tacticsState.currentCode].name}! Click "Next Piece" or try "2. Blind-Spot Exploit".</span>`;
+        } else if (tacticsState.movesUsed >= tacticsState.parMoves) {
+          document.getElementById('puzzleInstructionText').innerHTML =
+            `<span class="text-amber-300 font-bold">Out of par moves! Click "Reset Drill" to try again.</span>`;
+        }
+      }
+    });
+
+    function renderTacticsRightPanel() {
+      const base = PIECE_DB[tacticsState.currentCode];
+      const activeCode = (tacticsState.testPromoted && base.promotesTo && PIECE_DB[base.promotesTo])
+        ? base.promotesTo
+        : tacticsState.currentCode;
+      const spec = PIECE_DB[activeCode];
+
+      document.getElementById('dojoPieceTitle').textContent = `${spec.name} (${spec.kanji})`;
+      document.getElementById('dojoPieceCodeSub').textContent = `Legend Letter: [${spec.code}]`;
+      document.getElementById('dojoKomaCode').textContent = spec.code;
+      document.getElementById('dojoKomaKanji').textContent = spec.kanji.slice(0, 2);
+      document.getElementById('dojoHowItWorks').textContent = spec.moveSummary;
+
+      const ul = document.getElementById('dojoLimitsList');
+      ul.innerHTML = '';
+      spec.limitBullets.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        ul.appendChild(li);
+      });
+
+      if (base.promotesTo && PIECE_DB[base.promotesTo]) {
+        const pSpec = PIECE_DB[base.promotesTo];
+        document.getElementById('dojoPromoInfo').textContent =
+          `Promotes to [${pSpec.code}] ${pSpec.name} (${pSpec.kanji}) when entering or moving inside the last 11 ranks.`;
+        document.getElementById('lblTestPromoted').textContent = `Test Promoted [${pSpec.code}]`;
+      } else {
+        document.getElementById('dojoPromoInfo').textContent = `Does not promote (Royal or Apex rank).`;
+        document.getElementById('lblTestPromoted').textContent = `No Promoted Form`;
+      }
+
+      // Render 8-Direction Capability Grid
+      const grid = document.getElementById('dojoDirectionGrid');
+      const order = ['NW', 'N', 'NE', 'W', 'SELF', 'E', 'SW', 'S', 'SE'];
+      grid.innerHTML = '';
+      order.forEach(key => {
+        const cell = document.createElement('div');
+        if (key === 'SELF') {
+          cell.className = 'p-1.5 rounded bg-amber-500 text-slate-950 font-black';
+          cell.textContent = `[${spec.code}]`;
+        } else {
+          const info = spec.dirs[key];
+          let badge = '— (Blind)';
+          let cls = 'bg-slate-900 text-slate-500 border border-slate-800';
+          if (info.type === 'step') {
+            badge = `${key}: Step 1`;
+            cls = 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40';
+          } else if (info.type === 'range') {
+            badge = `${key}: 1–${info.max}`;
+            cls = 'bg-amber-950/80 text-amber-300 border border-amber-500/40';
+          } else if (info.type === 'jump') {
+            badge = `${key}: Jump 2`;
+            cls = 'bg-amber-950/80 text-amber-300 border border-amber-500/40';
+          } else if (info.type === 'slide') {
+            badge = `${key}: Slide ∞`;
+            cls = 'bg-sky-950/80 text-sky-300 border border-sky-500/40';
+          } else if (info.type === 'hook') {
+            badge = `${key}: Hook 90°`;
+            cls = 'bg-fuchsia-950/80 text-fuchsia-300 border border-fuchsia-500/40';
+          }
+          cell.className = `p-1.5 rounded text-[10px] font-semibold ${cls}`;
+          cell.textContent = badge;
+        }
+        grid.appendChild(cell);
+      });
+    }
+
+    function renderTacticsPieceList() {
+      const container = document.getElementById('tacticsPieceList');
+      if (!container) return;
+      const q = (document.getElementById('tacticsSearchInput')?.value || '').trim().toLowerCase();
+      const filter = document.getElementById('tacticsFilterSelect')?.value || 'all';
+      container.innerHTML = '';
+
+      RAW_LEGEND.forEach(([code, name, kanji]) => {
+        if (q && !code.toLowerCase().includes(q) && !name.toLowerCase().includes(q) && !kanji.includes(q)) return;
+        const spec = PIECE_DB[code];
+        const isSolved = !!tacticsState.solvedMap[code];
+        if (filter === 'unsolved' && isSolved) return;
+        if (filter === 'solved' && !isSolved) return;
+        if (filter === 'special' && !spec.special) return;
+        if (filter === 'jump' && spec.extraJumps.length === 0) return;
+        if (filter === 'step' && spec.blindSpots.length === 0) return;
+
+        const active = tacticsState.currentCode === code;
+        const item = document.createElement('div');
+        item.className = `flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer border transition ${
+          active
+            ? 'bg-amber-500/20 border-amber-400 text-white'
+            : 'bg-slate-900/90 hover:bg-slate-800 border-slate-800 text-slate-200'
+        }`;
+        item.onclick = () => selectTacticsPiece(code);
+        item.innerHTML = `
+          <div class="flex items-center gap-2 truncate">
+            <span class="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono-code font-black text-[10px] min-w-[28px] text-center">${code}</span>
+            <div class="truncate">
+              <div class="text-xs font-semibold truncate">${name}</div>
+              <div class="text-[10px] text-slate-400 font-kanji">${kanji} • ${spec.blindSpots.length ? `${spec.blindSpots.length} Blind Spots` : 'All-Around'}</div>
+            </div>
+          </div>
+          <span class="text-xs ${isSolved ? 'text-emerald-400' : 'text-slate-600'}">
+            <i class="fa-solid ${isSolved ? 'fa-circle-check' : 'fa-circle'}"></i>
+          </span>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    function resetCurrentPuzzle() {
+      setupTacticsPuzzleBoard();
+    }
+
+    function selectNextTacticsPiece() {
+      const idx = RAW_LEGEND.findIndex(([c]) => c === tacticsState.currentCode);
+      const nextIdx = (idx + 1) % RAW_LEGEND.length;
+      selectTacticsPiece(RAW_LEGEND[nextIdx][0]);
+    }
+
+    /*************************************************************************
+     * 11. CLIENT-SIDE P2P MULTIPLAYER (PeerJS WebRTC + Manual SDP Fallback)
+     *************************************************************************/
+    const P2P = {
+      peer: null,
+      conn: null,
+      mySide: 'sente',
+      roomCode: null,
+      manualPc: null,
+      manualDc: null,
+
+      setStatus(text, connected = false, roleText = 'P2P') {
+        document.getElementById('p2pModalStatusText').textContent = text;
+        document.getElementById('p2pRoleBadge').textContent = roleText;
+        const dot1 = document.getElementById('p2pStatusDot');
+        const dot2 = document.getElementById('p2pModalDot');
+        dot1.className = `w-2 h-2 rounded-full ${connected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`;
+        dot2.className = `w-2.5 h-2.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-amber-400'}`;
+        document.getElementById('p2pHeaderLabel').textContent = connected ? `Connected (${this.mySide === 'sente' ? '▲' : '△'})` : 'P2P Online';
+      },
+
+      send(payload) {
+        const msg = JSON.stringify(payload);
+        if (this.conn && this.conn.open) {
+          this.conn.send(payload);
+        } else if (this.manualDc && this.manualDc.readyState === 'open') {
+          this.manualDc.send(msg);
+        }
+      },
+
+      handleIncoming(data) {
+        const obj = typeof data === 'string' ? JSON.parse(data) : data;
+        if (!obj) return;
+        if (obj.type === 'move') {
+          executeMatchMove(obj.fromR, obj.fromC, obj.moveObj, false);
+        } else if (obj.type === 'end_lion') {
+          state.lionPendingCell = null;
+          finishTurnTransition();
+        } else if (obj.type === 'chat') {
+          appendP2PChat('Peer', obj.text, 'text-emerald-300');
+        } else if (obj.type === 'reset') {
+          initMatchBoard();
+        }
+      }
+    };
+
+    function hostPeerJSRoom() {
+      if (typeof Peer === 'undefined') {
+        P2P.setStatus('PeerJS CDN unavailable — Use Tab 2 (Manual WebRTC SDP)', false);
+        return;
+      }
+      const code = 'taikyoku-' + Math.floor(1000 + Math.random() * 9000);
+      P2P.roomCode = code;
+      P2P.mySide = 'sente';
+      P2P.setStatus(`Initializing Room ${code}...`, false, 'Host (▲ Sente)');
+
+      if (P2P.peer) P2P.peer.destroy();
+      P2P.peer = new Peer(code);
+
+      P2P.peer.on('open', (id) => {
+        document.getElementById('hostRoomDetails').classList.remove('hidden');
+        document.getElementById('hostRoomCodeInput').value = id;
+        P2P.setStatus(`Waiting for opponent to join [${id}]...`, false, 'Host (▲ Sente)');
+      });
+
+      P2P.peer.on('connection', (conn) => {
+        P2P.conn = conn;
+        setupPeerJSConnectionHandlers(conn);
+      });
+
+      P2P.peer.on('error', (err) => {
+        P2P.setStatus(`PeerJS Notice: ${err.type}. Try again or use Tab 2.`, false);
+      });
+    }
+
+    function joinPeerJSRoom(customCode) {
+      const code = (customCode || document.getElementById('joinRoomCodeInput').value || '').trim();
+      if (!code) return;
+      if (typeof Peer === 'undefined') {
+        P2P.setStatus('PeerJS unavailable — Use Tab 2 (Manual SDP)', false);
+        return;
+      }
+      P2P.mySide = 'gote';
+      P2P.setStatus(`Connecting to ${code}...`, false, 'Guest (△ Gote)');
+
+      if (P2P.peer) P2P.peer.destroy();
+      P2P.peer = new Peer();
+      P2P.peer.on('open', () => {
+        const conn = P2P.peer.connect(code, { reliable: true });
+        P2P.conn = conn;
+        setupPeerJSConnectionHandlers(conn);
+      });
+    }
+
+    function setupPeerJSConnectionHandlers(conn) {
+      conn.on('open', () => {
+        state.opponentMode = 'p2p';
+        document.getElementById('selectGameMode').value = 'p2p';
+        P2P.setStatus(
+          `Connected P2P! You play ${P2P.mySide === 'sente' ? '▲ Sente (Black)' : '△ Gote (White)'}.`,
+          true,
+          P2P.mySide === 'sente' ? '▲ Sente' : '△ Gote'
+        );
+        appendP2PChat('System', `Connected via WebRTC! You play ${P2P.mySide.toUpperCase()}.`, 'text-amber-300');
+      });
+      conn.on('data', (data) => P2P.handleIncoming(data));
+      conn.on('close', () => P2P.setStatus('Peer disconnected.', false));
+    }
+
+    // Serverless Manual WebRTC SDP Handshake (Zero-Broker Fallback)
+    async function createManualWebRTCOffer() {
+      P2P.mySide = 'sente';
+      P2P.manualPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      P2P.manualDc = P2P.manualPc.createDataChannel('taikyoku');
+      bindManualDataChannel(P2P.manualDc);
+
+      P2P.manualPc.onicecandidate = (e) => {
+        if (!e.candidate) {
+          document.getElementById('manualOfferOut').value = btoa(JSON.stringify(P2P.manualPc.localDescription));
+          P2P.setStatus('Offer generated! Copy and send it to your friend.', false, 'Host (▲ Sente)');
+        }
+      };
+      const offer = await P2P.manualPc.createOffer();
+      await P2P.manualPc.setLocalDescription(offer);
+    }
+
+    async function createManualWebRTCAnswer() {
+      const raw = document.getElementById('manualOfferIn').value.trim();
+      if (!raw) return;
+      P2P.mySide = 'gote';
+      P2P.manualPc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      P2P.manualPc.ondatachannel = (e) => {
+        P2P.manualDc = e.channel;
+        bindManualDataChannel(P2P.manualDc);
+      };
+      P2P.manualPc.onicecandidate = (e) => {
+        if (!e.candidate) {
+          document.getElementById('manualAnswerOut').value = btoa(JSON.stringify(P2P.manualPc.localDescription));
+          P2P.setStatus('Answer generated! Copy and send it back to the Host.', false, 'Guest (△ Gote)');
+        }
+      };
+      const offerDesc = JSON.parse(atob(raw));
+      await P2P.manualPc.setRemoteDescription(offerDesc);
+      const answer = await P2P.manualPc.createAnswer();
+      await P2P.manualPc.setLocalDescription(answer);
+    }
+
+    async function acceptManualWebRTCAnswer() {
+      const raw = document.getElementById('manualAnswerIn').value.trim();
+      if (!raw || !P2P.manualPc) return;
+      const ansDesc = JSON.parse(atob(raw));
+      await P2P.manualPc.setRemoteDescription(ansDesc);
+    }
+
+    function bindManualDataChannel(dc) {
+      dc.onopen = () => {
+        state.opponentMode = 'p2p';
+        document.getElementById('selectGameMode').value = 'p2p';
+        P2P.setStatus(`Direct WebRTC Connected! You play ${P2P.mySide.toUpperCase()}.`, true, P2P.mySide);
+        appendP2PChat('System', 'Serverless WebRTC DataChannel open!', 'text-emerald-300');
+      };
+      dc.onmessage = (e) => P2P.handleIncoming(e.data);
+    }
+
+    function sendP2PChatMessage(e) {
+      e.preventDefault();
+      const input = document.getElementById('p2pChatInput');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      appendP2PChat('You', text, 'text-sky-300');
+      P2P.send({ type: 'chat', text });
+    }
+
+    function appendP2PChat(sender, text, colorCls) {
+      const box = document.getElementById('p2pChatMessages');
+      const div = document.createElement('div');
+      div.innerHTML = `<strong class="${colorCls}">${sender}:</strong> <span class="text-slate-200">${text}</span>`;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function copyTextFromInput(id) {
+      const el = document.getElementById(id);
+      if (!el || !el.value) return;
+      el.select();
+      document.execCommand('copy');
+      showCopyFeedback('Copied to clipboard!');
+    }
+
+    function copyInviteLink() {
+      const code = document.getElementById('hostRoomCodeInput').value;
+      if (!code) return;
+      const url = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(code)}`;
+      const temp = document.createElement('input');
+      document.body.appendChild(temp);
+      temp.value = url;
+      temp.select();
+      document.execCommand('copy');
+      document.body.removeChild(temp);
+      showCopyFeedback('GitHub Pages Invite Link copied!');
+    }
+
+    function showCopyFeedback(msg) {
+      const fb = document.getElementById('p2pCopyFeedback');
+      fb.textContent = msg;
+      fb.classList.remove('hidden');
+      setTimeout(() => fb.classList.add('hidden'), 2400);
+    }
+
+    /*************************************************************************
+     * 12. VIEW & MODAL CONTROLLERS
+     *************************************************************************/
+    function switchPrimaryView(view) {
+      state.primaryView = view;
+      const vMatch = document.getElementById('viewMatch');
+      const vTactics = document.getElementById('viewTactics');
+      const bMatch = document.getElementById('tabBtnMatch');
+      const bTactics = document.getElementById('tabBtnTactics');
+
+      if (view === 'match') {
+        vMatch.classList.remove('hidden');
+        vMatch.classList.add('flex');
+        vTactics.classList.add('hidden');
+        vTactics.classList.remove('flex');
+        bMatch.className = 'px-3 py-1.5 rounded-md font-semibold transition flex items-center gap-1.5 bg-amber-600 text-slate-950 shadow';
+        bTactics.className = 'px-3 py-1.5 rounded-md font-semibold transition flex items-center gap-1.5 text-slate-300 hover:text-white';
+        resizeMainCanvas();
+      } else {
+        vMatch.classList.add('hidden');
+        vMatch.classList.remove('flex');
+        vTactics.classList.remove('hidden');
+        vTactics.classList.add('flex');
+        bTactics.className = 'px-3 py-1.5 rounded-md font-semibold transition flex items-center gap-1.5 bg-amber-600 text-slate-950 shadow';
+        bMatch.className = 'px-3 py-1.5 rounded-md font-semibold transition flex items-center gap-1.5 text-slate-300 hover:text-white';
+        selectTacticsPiece(tacticsState.currentCode || 'AB');
+      }
+    }
+
+    function changeOpponentMode(mode) {
+      state.opponentMode = mode;
+      if (mode === 'p2p') openP2PModal();
+    }
+
+    function openLegendModal() {
+      renderFullLegendModalGrid();
+      const modal = document.getElementById('legendModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeLegendModal() {
+      const modal = document.getElementById('legendModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function renderFullLegendModalGrid() {
+      const grid = document.getElementById('modalLegendGrid');
+      const q = (document.getElementById('modalLegendSearch')?.value || '').trim().toLowerCase();
+      grid.innerHTML = '';
+
+      RAW_LEGEND.forEach(([code, name, kanji]) => {
+        if (q && !code.toLowerCase().includes(q) && !name.toLowerCase().includes(q) && !kanji.includes(q)) return;
+        const spec = PIECE_DB[code];
+        const card = document.createElement('div');
+        card.className = 'bg-slate-900 border border-amber-700/40 rounded-xl p-3 flex flex-col justify-between space-y-2 shadow';
+        card.innerHTML = `
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <div class="flex items-center gap-2">
+                <div class="w-10 h-12 shogi-koma flex flex-col items-center justify-center shrink-0">
+                  <span class="font-mono-code font-black text-[10px] text-amber-900 leading-none">${spec.code}</span>
+                  <span class="font-kanji font-black text-sm text-slate-950 leading-none mt-0.5">${spec.kanji.slice(0,2)}</span>
+                </div>
+                <div>
+                  <div class="font-bold text-sm text-amber-200">${spec.name}</div>
+                  <div class="text-[11px] font-mono-code text-slate-400">Code: [${spec.code}] • ${spec.kanji}</div>
+                </div>
+              </div>
+              <span class="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-mono-code font-black text-xs">${spec.code}</span>
+            </div>
+            <p class="text-xs text-slate-300 leading-snug">${spec.moveSummary}</p>
+            <p class="text-[11px] text-rose-300/90 mt-1 leading-snug">${spec.limitBullets[0]}</p>
+          </div>
+          <div class="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-800">
+            <button onclick="closeLegendModal(); locatePieceOnBoard('${spec.code}')" class="py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold">
+              Locate on 36×36
+            </button>
+            <button onclick="closeLegendModal(); openPieceTacticsTrainer('${spec.code}')" class="py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-bold">
+              Train Limits & Puzzle
+            </button>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function openP2PModal() {
+      const m = document.getElementById('p2pModal');
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+    }
+
+    function closeP2PModal() {
+      const m = document.getElementById('p2pModal');
+      m.classList.add('hidden');
+      m.classList.remove('flex');
+    }
+
+    function switchP2PTab(tab) {
+      const pRoom = document.getElementById('p2pPanelRoom');
+      const pMan = document.getElementById('p2pPanelManual');
+      const tRoom = document.getElementById('p2pTabRoom');
+      const tMan = document.getElementById('p2pTabManual');
+      if (tab === 'room') {
+        pRoom.classList.remove('hidden');
+        pMan.classList.add('hidden');
+        tRoom.className = 'flex-1 py-2.5 text-center border-b-2 border-emerald-400 text-emerald-300 bg-slate-900';
+        tMan.className = 'flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-400 hover:text-slate-200';
+      } else {
+        pMan.classList.remove('hidden');
+        pRoom.classList.add('hidden');
+        tMan.className = 'flex-1 py-2.5 text-center border-b-2 border-emerald-400 text-emerald-300 bg-slate-900';
+        tRoom.className = 'flex-1 py-2.5 text-center border-b-2 border-transparent text-slate-400 hover:text-slate-200';
+      }
+    }
+
+    function showVictoryBanner(title, reason) {
+      document.getElementById('victoryModalTitle').textContent = title;
+      document.getElementById('victoryModalReason').textContent = reason;
+      const m = document.getElementById('victoryModal');
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+    }
+
+    function closeVictoryModalAndReset() {
+      const m = document.getElementById('victoryModal');
+      m.classList.add('hidden');
+      m.classList.remove('flex');
+      resetMatchBoard();
+    }
+
+    // Expose global ShogiApp namespace and bind all handlers to window to prevent ReferenceErrors
+    const ShogiApp = {
+      state,
+      tacticsState,
+      P2P,
+      Sound,
+      PIECE_DB,
+      RAW_LEGEND,
+      switchPrimaryView,
+      openLegendModal,
+      closeLegendModal,
+      renderFullLegendModalGrid,
+      changeOpponentMode,
+      openP2PModal,
+      closeP2PModal,
+      switchP2PTab,
+      cycleLabelMode,
+      toggleSound,
+      toggleInspectorPromo,
+      locatePieceOnBoard,
+      openPieceTacticsTrainer,
+      renderSidebarLegend,
+      zoomMainBoard,
+      fitMainBoard,
+      focusCamp,
+      finishLionSecondStep,
+      undoLastMove,
+      resetMatchBoard,
+      sendP2PChatMessage,
+      renderTacticsPieceList,
+      setTacticsDrillMode,
+      drawTacticsBoard,
+      togglePromotedInDojo,
+      resetCurrentPuzzle,
+      selectNextTacticsPiece,
+      selectTacticsPiece,
+      hostPeerJSRoom,
+      joinPeerJSRoom,
+      copyTextFromInput,
+      copyInviteLink,
+      createManualWebRTCOffer,
+      createManualWebRTCAnswer,
+      acceptManualWebRTCAnswer,
+      showVictoryBanner,
+      closeVictoryModalAndReset
+    };
+    window.ShogiApp = ShogiApp;
+    Object.assign(window, ShogiApp);
+
+    // Boot Application & Check URL for `?room=` GitHub Pages P2P Auto-Join
+    window.onload = function () {
+      loadSolvedTacticsProgress();
+      initMatchBoard();
+      renderSidebarLegend();
+      fitMainBoard();
+      focusCamp('sente');
+      requestAnimationFrame(renderMatchLoop);
+
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room');
+      if (roomParam) {
+        openP2PModal();
+        document.getElementById('joinRoomCodeInput').value = roomParam;
+        setTimeout(() => joinPeerJSRoom(roomParam), 500);
+      }
+    };
+  </script>
+</body>
+</html>

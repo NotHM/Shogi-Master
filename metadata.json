@@ -1,0 +1,6 @@
+{
+  "name": "Taikyoku Shōgi — Complete 4-Scale Shōgi Suite & 208-Piece Dojo",
+  "description": "Authentic Dōbutsu (3×4), Standard (9×9), Chū (12×12), and Grand Taikyoku (36×36) Shōgi with explicit 208+ piece rules, Tsume-Shōgi Dojo, 40 interactive Academy lessons, 20 AI Masters, and live WebSocket/P2P tournaments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
